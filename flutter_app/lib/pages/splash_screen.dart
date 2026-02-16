@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../core/styling/responsive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -47,57 +48,60 @@ class _SplashScreenState extends State<SplashScreen> {
             Text(
               'Family Hub',
               style: GoogleFonts.poppins(
-                fontSize: 28,
+                fontSize: Responsive.fontSize(context, 28),
                 fontWeight: FontWeight.bold,
                 color: const Color(0xFF388E3C),
               ),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: Responsive.spacing(context, 20)),
             // Logo
             Container(
-              width: 100,
-              height: 100,
+              width: Responsive.spacing(context, 100),
+              height: Responsive.spacing(context, 100),
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
                     color: Colors.green.withOpacity(0.2),
-                    blurRadius: 20,
-                    spreadRadius: 5,
+                    blurRadius: Responsive.spacing(context, 20),
+                    spreadRadius: Responsive.spacing(context, 5),
                   ),
                 ],
               ),
-              child: const Icon(Icons.family_restroom, size: 50, color: Color(0xFF388E3C)),
+              child: Icon(Icons.family_restroom, size: Responsive.fontSize(context, 50), color: const Color(0xFF388E3C)),
             ),
-            const SizedBox(height: 30),
+            SizedBox(height: Responsive.spacing(context, 30)),
             // Loading dots
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildDot(),
-                const SizedBox(width: 8),
-                _buildDot(),
-                const SizedBox(width: 8),
-                _buildDot(),
+                _buildDot(context),
+                SizedBox(width: Responsive.spacing(context, 8)),
+                _buildDot(context),
+                SizedBox(width: Responsive.spacing(context, 8)),
+                _buildDot(context),
               ],
             ),
             const Spacer(),
             Text(
               'Connecting Families Together',
-              style: GoogleFonts.poppins(color: const Color(0xFF388E3C)),
+              style: GoogleFonts.poppins(
+                fontSize: Responsive.fontSize(context, 14),
+                color: const Color(0xFF388E3C),
+              ),
             ),
-            const SizedBox(height: 40),
+            SizedBox(height: Responsive.spacing(context, 40)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDot() {
+  Widget _buildDot(BuildContext context) {
     return Container(
-      width: 8,
-      height: 8,
+      width: Responsive.spacing(context, 8),
+      height: Responsive.spacing(context, 8),
       decoration: const BoxDecoration(
         color: Color(0xFF388E3C),
         shape: BoxShape.circle,

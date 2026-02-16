@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/styling/responsive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/services/api_service.dart';
 import 'home.dart';
@@ -351,70 +352,70 @@ class _LoginPageState extends State<LoginPage> {
       body: Center(
         child: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            padding: EdgeInsets.symmetric(horizontal: Responsive.spacing(context, 24)),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // Security Icon
                 Image.asset(
                   'assets/security_icon.png',
-                  width: 120,
-                  height: 120,
+                  width: Responsive.spacing(context, 120),
+                  height: Responsive.spacing(context, 120),
                 ),
-                const SizedBox(height: 40),
+                SizedBox(height: Responsive.spacing(context, 40)),
                 
                 // Welcome Back Text
-                const Text(
+                Text(
                   'Welcome Back !',
                   style: TextStyle(
-                    fontSize: 32,
+                    fontSize: Responsive.fontSize(context, 32),
                     fontWeight: FontWeight.bold,
                     color: Colors.black87,
                   ),
                 ),
-                const SizedBox(height: 40),
+                SizedBox(height: Responsive.spacing(context, 40)),
                 
                 // Email TextField
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(Responsive.spacing(context, 8)),
                   ),
                   child: TextField(
                     controller: _emailController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: 'Email',
-                      hintStyle: TextStyle(color: Colors.grey),
-                      border: OutlineInputBorder(
+                      hintStyle: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14)),
+                      border: const OutlineInputBorder(
                         borderSide: BorderSide.none,
                       ),
                       contentPadding: EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 16,
+                        horizontal: Responsive.spacing(context, 20),
+                        vertical: Responsive.spacing(context, 16),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: Responsive.spacing(context, 16)),
                 
                 // Password TextField
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(Responsive.spacing(context, 8)),
                   ),
                   child: TextField(
                     controller: _passwordController,
                     obscureText: _obscurePassword,
                     decoration: InputDecoration(
                       hintText: 'Password',
-                      hintStyle: const TextStyle(color: Colors.grey),
+                      hintStyle: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14)),
                       border: const OutlineInputBorder(
                         borderSide: BorderSide.none,
                       ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 16,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: Responsive.spacing(context, 20),
+                        vertical: Responsive.spacing(context, 16),
                       ),
                       suffixIcon: IconButton(
                         icon: Icon(
@@ -422,6 +423,7 @@ class _LoginPageState extends State<LoginPage> {
                               ? Icons.visibility_off
                               : Icons.visibility,
                           color: Colors.grey,
+                          size: Responsive.fontSize(context, 24),
                         ),
                         onPressed: () {
                           setState(() {
@@ -432,87 +434,87 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: Responsive.spacing(context, 8)),
                 
                 // Forgot Password
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton(
                     onPressed: () {},
-                    child: const Text(
+                    child: Text(
                       'Forgot Password',
                       style: TextStyle(
-                        color: Color(0xFF5E9B5E),
-                        fontSize: 14,
+                        color: const Color(0xFF5E9B5E),
+                        fontSize: Responsive.fontSize(context, 14),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: Responsive.spacing(context, 16)),
                 
                 // Login Button
                 SizedBox(
                   width: double.infinity,
-                  height: 50,
+                  height: Responsive.spacing(context, 50),
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _handleLogin,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF4CAF50),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(Responsive.spacing(context, 8)),
                       ),
                       elevation: 0,
                     ),
                     child: _isLoading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
+                        ? SizedBox(
+                            width: Responsive.spacing(context, 20),
+                            height: Responsive.spacing(context, 20),
+                            child: const CircularProgressIndicator(
                               color: Colors.white,
                               strokeWidth: 2,
                             ),
                           )
-                        : const Text(
+                        : Text(
                             'Log In',
                             style: TextStyle(
-                              fontSize: 18,
+                              fontSize: Responsive.fontSize(context, 18),
                               fontWeight: FontWeight.w500,
                               color: Colors.white,
                             ),
                           ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                SizedBox(height: Responsive.spacing(context, 24)),
                 
                 // Security Message
-                const Text(
+                Text(
                   'Your password is securely encrypted using top-tier technology',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.black45,
-                    fontSize: 12,
+                    fontSize: Responsive.fontSize(context, 12),
                   ),
                 ),
-                const SizedBox(height: 32),
+                SizedBox(height: Responsive.spacing(context, 32)),
                 
                 // Divider with text
-                const Row(
+                Row(
                   children: [
-                    Expanded(child: Divider(color: Colors.black26)),
+                    const Expanded(child: Divider(color: Colors.black26)),
                     Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      padding: EdgeInsets.symmetric(horizontal: Responsive.spacing(context, 16)),
                       child: Text(
                         'Or sign in with',
                         style: TextStyle(
                           color: Colors.black45,
-                          fontSize: 14,
+                          fontSize: Responsive.fontSize(context, 14),
                         ),
                       ),
                     ),
-                    Expanded(child: Divider(color: Colors.black26)),
+                    const Expanded(child: Divider(color: Colors.black26)),
                   ],
                 ),
-                const SizedBox(height: 24),
+                SizedBox(height: Responsive.spacing(context, 24)),
                 
                 // Social Login Buttons
                 Row(
@@ -522,75 +524,75 @@ class _LoginPageState extends State<LoginPage> {
                     InkWell(
                       onTap: () {},
                       child: Container(
-                        width: 56,
-                        height: 56,
+                        width: Responsive.spacing(context, 56),
+                        height: Responsive.spacing(context, 56),
                         decoration: const BoxDecoration(
                           color: Color(0xFF1877F2),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.facebook,
                           color: Colors.white,
-                          size: 32,
+                          size: Responsive.fontSize(context, 32),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 24),
+                    SizedBox(width: Responsive.spacing(context, 24)),
                     
                     // Google Button
                     InkWell(
                       onTap: () {},
                       child: Container(
-                        width: 56,
-                        height: 56,
+                        width: Responsive.spacing(context, 56),
+                        height: Responsive.spacing(context, 56),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.grey.shade300),
                         ),
                         child: Padding(
-                          padding: const EdgeInsets.all(12.0),
+                          padding: EdgeInsets.all(Responsive.spacing(context, 12)),
                           child: Image.network(
                             'https://www.google.com/favicon.ico',
                             errorBuilder: (context, error, stackTrace) {
-                              return const Icon(Icons.g_mobiledata, size: 32);
+                              return Icon(Icons.g_mobiledata, size: Responsive.fontSize(context, 32));
                             },
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 24),
+                    SizedBox(width: Responsive.spacing(context, 24)),
                     
                     // Apple Button
                     InkWell(
                       onTap: () {},
                       child: Container(
-                        width: 56,
-                        height: 56,
+                        width: Responsive.spacing(context, 56),
+                        height: Responsive.spacing(context, 56),
                         decoration: const BoxDecoration(
                           color: Colors.black,
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.apple,
                           color: Colors.white,
-                          size: 32,
+                          size: Responsive.fontSize(context, 32),
                         ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                SizedBox(height: Responsive.spacing(context, 24)),
                 
                 // Sign Up Link
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
+                    Text(
                       "Don't have an account? ",
                       style: TextStyle(
                         color: Colors.black54,
-                        fontSize: 14,
+                        fontSize: Responsive.fontSize(context, 14),
                       ),
                     ),
                     TextButton(

@@ -17,9 +17,15 @@ exports.createMember = catchAsync(async (req, res, next) => {
   const family_id = req.familyAccount._id;
   
   // Check if mail already exists in this family
-  const existingMember = await member.findOne({ mail, family_id });
-  if (existingMember) {
+  const existingMemberByMail = await member.findOne({ mail, family_id });
+  if (existingMemberByMail) {
     return next(new AppError("A member with this email already exists in your family", 400));
+  }
+  
+  // Check if username already exists in this family (username is unique per family, not system-wide)
+  const existingMemberByUsername = await member.findOne({ username, family_id });
+  if (existingMemberByUsername) {
+    return next(new AppError("A member with this username already exists in your family. Please choose a different username.", 400));
   }
   
   // Check if member type exists for this family, if not create it
