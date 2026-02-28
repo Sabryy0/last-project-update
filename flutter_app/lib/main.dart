@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'pages/signup_login.dart';
 import 'pages/home.dart';
 import 'pages/setting.dart';
@@ -11,8 +12,12 @@ import 'pages/rewards_screen.dart';
 import 'pages/redeem_screen.dart';
 import 'pages/task_management_screen.dart';
 import 'pages/family_points_screen.dart';
+import 'pages/inventory_screen.dart';
+import 'pages/inventory_categories_screen.dart';
+import 'pages/meals_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
 
@@ -42,6 +47,9 @@ class MyApp extends StatelessWidget {
         '/redeem': (context) => const RedeemScreen(),
         '/task-management': (context) => const TaskManagementScreen(),
         '/family-points': (context) => const FamilyPointsScreen(),
+        '/inventory': (context) => const InventoryScreen(),
+        '/inventory-categories': (context) => const InventoryCategoriesScreen(),
+        '/meals': (context) => const MealsScreen(),
       },
     );
   }

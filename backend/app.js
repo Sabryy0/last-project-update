@@ -18,6 +18,15 @@ const wishlistRouter = require('./routes/wishlistRoutes');
 const wishlistCategoryRouter = require('./routes/wishlistCategoryRoutes');
 const redeemRouter = require('./routes/redeemRoutes');
 
+// Food & Tracking module routes
+const unitRouter = require('./routes/unitRoutes');
+const recipeRouter = require('./routes/recipeRoutes');
+const inventoryRouter = require('./routes/inventoryRoutes');
+const mealRouter = require('./routes/mealRoutes');
+const leftoverRouter = require('./routes/leftoverRoutes');
+const mealSuggestionRouter = require('./routes/mealSuggestionRoutes');
+const locationRouter = require('./routes/locationRoutes');
+
 
 const path = require('path');
 
@@ -49,6 +58,15 @@ app.use('/api/point-history', pointHistoryRouter);
 app.use('/api/wishlist', wishlistRouter);
 app.use('/api/wishlist-categories', wishlistCategoryRouter);
 app.use('/api/redeem', redeemRouter);
+
+// Food & Tracking module routes
+app.use('/api/units', unitRouter);
+app.use('/api/recipes', recipeRouter);
+app.use('/api/inventory', inventoryRouter);
+app.use('/api/meals', mealRouter);
+app.use('/api/leftovers', leftoverRouter);
+app.use('/api/meal-suggestions', mealSuggestionRouter);
+app.use('/api/location', locationRouter);
 
 // Global error handler
 app.use((err, req, res, next) => {

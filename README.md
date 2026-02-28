@@ -145,6 +145,7 @@ auth-implementation/
 │   ├── public/
 │   └── package.json
 │
+
 ├── .gitignore
 └── README.md                   # This file
 ```

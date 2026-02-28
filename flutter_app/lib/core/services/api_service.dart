@@ -665,4 +665,419 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('memberType');
   }
+
+  // ======================= UNIT APIs =======================
+
+  // Get all units
+  Future<List<dynamic>> getAllUnits() async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/units'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data']['units'] ?? [];
+    } else {
+      throw Exception('Failed to load units');
+    }
+  }
+
+  // Seed default units
+  Future<Map<String, dynamic>> seedUnits() async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/units/seed'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to seed units');
+    }
+  }
+
+  // Create a new unit
+  Future<Map<String, dynamic>> createUnit(String unitName, String unitType) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/units'),
+      headers: headers,
+      body: jsonEncode({'unit_name': unitName, 'unit_type': unitType}),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to create unit');
+    }
+  }
+
+  // Update a unit
+  Future<Map<String, dynamic>> updateUnit(String unitId, {String? unitName, String? unitType}) async {
+    final headers = await _getHeaders();
+    final Map<String, dynamic> body = {};
+    if (unitName != null) body['unit_name'] = unitName;
+    if (unitType != null) body['unit_type'] = unitType;
+
+    final response = await http.patch(
+      Uri.parse('$baseUrl/units/$unitId'),
+      headers: headers,
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to update unit');
+    }
+  }
+
+  // Delete a unit
+  Future<void> deleteUnit(String unitId) async {
+    final headers = await _getHeaders();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/units/$unitId'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to delete unit');
+    }
+  }
+
+  // ======================= INVENTORY APIs =======================
+
+  // Get all inventories
+  Future<List<dynamic>> getAllInventories() async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/inventory'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data']['inventories'] ?? [];
+    } else {
+      throw Exception('Failed to load inventories');
+    }
+  }
+
+  // Create inventory
+  Future<Map<String, dynamic>> createInventory(String title) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/inventory'),
+      headers: headers,
+      body: jsonEncode({'title': title}),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to create inventory');
+    }
+  }
+
+  // Delete inventory
+  Future<void> deleteInventory(String inventoryId) async {
+    final headers = await _getHeaders();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/inventory/$inventoryId'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to delete inventory');
+    }
+  }
+
+  // ======================= ITEM CATEGORY APIs =======================
+
+  // Get all item categories
+  Future<List<dynamic>> getAllItemCategories() async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/inventory/categories'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data']['categories'] ?? [];
+    } else {
+      throw Exception('Failed to load item categories');
+    }
+  }
+
+  // Create item category
+  Future<Map<String, dynamic>> createItemCategory(Map<String, dynamic> data) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/inventory/categories'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to create item category');
+    }
+  }
+
+  // Delete item category
+  Future<void> deleteItemCategory(String categoryId) async {
+    final headers = await _getHeaders();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/inventory/categories/$categoryId'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to delete item category');
+    }
+  }
+
+  // ======================= INVENTORY ITEM APIs =======================
+
+  // Get all family items (across all inventories)
+  Future<List<dynamic>> getAllFamilyItems() async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/inventory/all-items'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data']['items'] ?? [];
+    } else {
+      throw Exception('Failed to load inventory items');
+    }
+  }
+
+  // Get items in a specific inventory
+  Future<Map<String, dynamic>> getInventoryItems(String inventoryId) async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/inventory/$inventoryId/items'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data'] ?? {};
+    } else {
+      throw Exception('Failed to load inventory items');
+    }
+  }
+
+  // Add item to inventory
+  Future<Map<String, dynamic>> addInventoryItem(String inventoryId, Map<String, dynamic> data) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/inventory/$inventoryId/items'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to add item');
+    }
+  }
+
+  // Update inventory item
+  Future<Map<String, dynamic>> updateInventoryItem(String itemId, Map<String, dynamic> data) async {
+    final headers = await _getHeaders();
+    final response = await http.patch(
+      Uri.parse('$baseUrl/inventory/items/$itemId'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to update item');
+    }
+  }
+
+  // Delete inventory item
+  Future<void> deleteInventoryItem(String itemId) async {
+    final headers = await _getHeaders();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/inventory/items/$itemId'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to delete item');
+    }
+  }
+
+  // Get inventory alerts (low stock, expiring, expired)
+  Future<Map<String, dynamic>> getInventoryAlerts() async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/inventory/alerts'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data'] ?? {};
+    } else {
+      throw Exception('Failed to load inventory alerts');
+    }
+  }
+
+  // ======================= MEAL APIs =======================
+
+  // Get meals (optional: ?date=YYYY-MM-DD or ?start_date=&end_date=)
+  Future<List<dynamic>> getMeals({String? date, String? startDate, String? endDate}) async {
+    final headers = await _getHeaders();
+    String url = '$baseUrl/meals';
+    final params = <String>[];
+    if (date != null) params.add('date=$date');
+    if (startDate != null) params.add('start_date=$startDate');
+    if (endDate != null) params.add('end_date=$endDate');
+    if (params.isNotEmpty) url += '?${params.join('&')}';
+
+    final response = await http.get(Uri.parse(url), headers: headers);
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data']['meals'] ?? [];
+    } else {
+      throw Exception('Failed to load meals');
+    }
+  }
+
+  // Get single meal with items
+  Future<Map<String, dynamic>> getMeal(String mealId) async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/meals/$mealId'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data'] ?? {};
+    } else {
+      throw Exception('Failed to load meal');
+    }
+  }
+
+  // Create meal
+  Future<Map<String, dynamic>> createMeal(Map<String, dynamic> data) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/meals'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to create meal');
+    }
+  }
+
+  // Update meal
+  Future<Map<String, dynamic>> updateMeal(String mealId, Map<String, dynamic> data) async {
+    final headers = await _getHeaders();
+    final response = await http.patch(
+      Uri.parse('$baseUrl/meals/$mealId'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to update meal');
+    }
+  }
+
+  // Delete meal
+  Future<void> deleteMeal(String mealId) async {
+    final headers = await _getHeaders();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/meals/$mealId'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to delete meal');
+    }
+  }
+
+  // Add item to meal (deducts from inventory)
+  Future<Map<String, dynamic>> addMealItem(String mealId, Map<String, dynamic> data) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/meals/$mealId/items'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to add meal item');
+    }
+  }
+
+  // Remove item from meal (restores inventory)
+  Future<void> removeMealItem(String mealId, String mealItemId) async {
+    final headers = await _getHeaders();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/meals/$mealId/items/$mealItemId'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to remove meal item');
+    }
+  }
+
+  // Prepare meal from recipe (auto-deduct all ingredients)
+  Future<Map<String, dynamic>> prepareMealFromRecipe(String mealId) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/meals/$mealId/prepare'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to prepare meal');
+    }
+  }
 }

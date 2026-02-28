@@ -227,6 +227,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _buildMenuCard(context, 'Rewards', Icons.emoji_events, '/rewards'),
                   _buildMenuCard(context, 'Status', Icons.trending_up, '/status'),
                   _buildMenuCard(context, 'Points', Icons.stars, '/family-points'),
+                  _buildMenuCard(context, 'Inventory', Icons.inventory_2, '/inventory'),
+                  _buildMenuCard(context, 'Meals', Icons.restaurant_menu, '/meals'),
                 ],
               ),
               const SizedBox(height: 24),
