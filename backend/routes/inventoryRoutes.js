@@ -3,9 +3,11 @@ const { protect, restrictTo } = require('../controllers/AuthController');
 const {
   createInventory,
   getAllInventories,
+  updateInventory,
   deleteInventory,
   createItemCategory,
   getAllItemCategories,
+  updateItemCategory,
   deleteItemCategory,
   addItem,
   getInventoryItems,
@@ -29,11 +31,13 @@ inventoryRouter.get('/all-items', getAllFamilyItems);
 // Item categories
 inventoryRouter.get('/categories', getAllItemCategories);
 inventoryRouter.post('/categories', restrictTo('Parent'), createItemCategory);
+inventoryRouter.patch('/categories/:categoryId', restrictTo('Parent'), updateItemCategory);
 inventoryRouter.delete('/categories/:categoryId', restrictTo('Parent'), deleteItemCategory);
 
 // Inventories
 inventoryRouter.get('/', getAllInventories);
 inventoryRouter.post('/', restrictTo('Parent'), createInventory);
+inventoryRouter.patch('/:inventoryId', restrictTo('Parent'), updateInventory);
 inventoryRouter.delete('/:inventoryId', restrictTo('Parent'), deleteInventory);
 
 // Inventory items

@@ -230,8 +230,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _buildMenuCard(context, 'Rewards', Icons.emoji_events, '/rewards'),
                   _buildMenuCard(context, 'Status', Icons.trending_up, '/status'),
                   _buildMenuCard(context, 'Points', Icons.stars, '/family-points'),
+                  _buildMenuCard(context, 'Food Hub', Icons.restaurant, '/food-hub'),
                   _buildMenuCard(context, 'Inventory', Icons.inventory_2, '/inventory'),
+                  _buildMenuCard(context, 'Recipes', Icons.menu_book, '/recipes'),
                   _buildMenuCard(context, 'Meals', Icons.restaurant_menu, '/meals'),
+                  _buildMenuCard(context, 'Leftovers', Icons.takeout_dining, '/leftovers'),
+                  _buildMenuCard(context, 'Receipts', Icons.receipt_long, '/receipts'),
+                  _buildMenuCard(context, 'Groceries', Icons.local_grocery_store, '/groceries'),
+                  _buildMenuCard(context, 'Categories', Icons.category, '/inventory-categories'),
                 ],
               ),
               const SizedBox(height: 24),
@@ -448,10 +454,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             // Already on dashboard
             break;
           case 2:
-            Navigator.pushNamed(context, '/tasks');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Schedule - Coming soon!')),
+            );
             break;
           case 3:
-            Navigator.pushNamed(context, '/rewards');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Chat - Coming soon!')),
+            );
             break;
           case 4:
             Navigator.pushReplacementNamed(context, '/settings');
@@ -461,8 +471,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       items: const [
         BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
         BottomNavigationBarItem(icon: Icon(Icons.dashboard_outlined), label: 'Dashboard'),
-        BottomNavigationBarItem(icon: Icon(Icons.checklist), label: 'Tasks'),
-        BottomNavigationBarItem(icon: Icon(Icons.emoji_events_outlined), label: 'Rewards'),
+        BottomNavigationBarItem(icon: Icon(Icons.calendar_today_outlined), label: 'Schedule'),
+        BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: 'Chat'),
         BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: 'Settings'),
       ],
     );

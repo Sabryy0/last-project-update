@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/services/api_service.dart';
+import '../core/styling/app_color.dart';
+import '../core/utils/food_utils.dart';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INVENTORY CATEGORIES SCREEN — Hierarchical Tree View
+// ═══════════════════════════════════════════════════════════════════════════════
 
 class InventoryCategoriesScreen extends StatefulWidget {
   const InventoryCategoriesScreen({super.key});
@@ -13,9 +19,14 @@ class InventoryCategoriesScreen extends StatefulWidget {
 class _InventoryCategoriesScreenState extends State<InventoryCategoriesScreen> {
   final ApiService _apiService = ApiService();
 
-  List<dynamic> _categories = [];
-  List<dynamic> _allItems = [];
+  // ── Data ──
+  List<dynamic> _treeCategories = []; // hierarchical (tree) from API
+  List<dynamic> _flatCategories = []; // flat list (for parent dropdowns)
   bool _loading = true;
+  String _searchQuery = '';
+
+  // ── Expansion state ──
+  final Set<String> _expandedIds = {};
 
   @override
   void initState() {
@@ -23,90 +34,285 @@ class _InventoryCategoriesScreenState extends State<InventoryCategoriesScreen> {
     _loadData();
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // DATA LOADING
+  // ───────────────────────────────────────────────────────────────────────────
+
   Future<void> _loadData() async {
     setState(() => _loading = true);
     try {
       final results = await Future.wait([
-        _apiService.getAllItemCategories(),
-        _apiService.getAllFamilyItems(),
+        _apiService.getAllInventoryCategories(tree: true),
+        _apiService.getAllInventoryCategories(tree: false),
       ]);
-
       setState(() {
-        _categories = results[0];
-        _allItems = results[1];
+        _treeCategories = results[0];
+        _flatCategories = results[1];
         _loading = false;
       });
     } catch (e) {
       setState(() => _loading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading categories: $e')),
-        );
-      }
+      if (mounted) showErrorSnack(context, 'Error loading categories: $e');
     }
   }
 
-  int _getItemCount(String categoryId) {
-    return _allItems.where((item) {
-      final cat = item['item_category'];
-      if (cat is Map) return cat['_id'] == categoryId;
-      return cat == categoryId;
-    }).length;
+  // ───────────────────────────────────────────────────────────────────────────
+  // SEARCH / FILTER
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// Returns `true` when [node] or any descendant matches the query.
+  bool _nodeMatchesSearch(dynamic node) {
+    if (_searchQuery.isEmpty) return true;
+    final q = _searchQuery.toLowerCase();
+    final title = (node['title'] ?? '').toString().toLowerCase();
+    if (title.contains(q)) return true;
+    final children = node['children'] as List<dynamic>? ?? [];
+    return children.any(_nodeMatchesSearch);
   }
 
-  List<dynamic> _getCategoryItems(String categoryId) {
-    return _allItems.where((item) {
-      final cat = item['item_category'];
-      if (cat is Map) return cat['_id'] == categoryId;
-      return cat == categoryId;
-    }).toList();
-  }
+  // ───────────────────────────────────────────────────────────────────────────
+  // ADD / EDIT CATEGORY DIALOG
+  // ───────────────────────────────────────────────────────────────────────────
 
-  String _getUnitName(dynamic item) {
-    final unit = item['unit_id'];
-    if (unit is Map) return unit['unit_name'] ?? '';
-    return '';
-  }
-
-  bool _isLowStock(dynamic item) {
-    final qty = (item['quantity'] ?? 0);
-    final threshold = (item['threshold_quantity'] ?? 1);
-    return qty is num && threshold is num && qty <= threshold;
-  }
-
-  IconData _getCategoryIcon(String title) {
-    final lower = title.toLowerCase();
-    if (lower.contains('fridge')) return Icons.kitchen;
-    if (lower.contains('freezer')) return Icons.ac_unit;
-    if (lower.contains('pantry')) return Icons.shelves;
-    if (lower.contains('suppli')) return Icons.shopping_bag;
-    if (lower.contains('device')) return Icons.devices;
-    if (lower.contains('clean')) return Icons.cleaning_services;
-    if (lower.contains('bathroom')) return Icons.bathroom;
-    return Icons.category;
-  }
-
-  void _showAddCategoryDialog({dynamic existingCategory}) {
+  void _showCategoryDialog({dynamic existingCategory}) {
     final isEdit = existingCategory != null;
-    final titleCtrl = TextEditingController(text: isEdit ? (existingCategory['title'] ?? '') : '');
-    final descCtrl = TextEditingController(text: isEdit ? (existingCategory['description'] ?? '') : '');
+    final titleCtrl = TextEditingController(
+        text: isEdit ? (existingCategory['title'] ?? '') : '');
+    final descCtrl = TextEditingController(
+        text: isEdit ? (existingCategory['description'] ?? '') : '');
+
+    // Determine the existing parent id
+    String? selectedParentId;
+    if (isEdit) {
+      final parentRef = existingCategory['parent_category_id'];
+      if (parentRef is Map) {
+        selectedParentId = parentRef['_id']?.toString();
+      } else if (parentRef is String) {
+        selectedParentId = parentRef;
+      }
+    }
+
+    // For the parent dropdown, exclude self and own descendants (to prevent cycles)
+    final Set<String> excludeIds = {};
+    if (isEdit) {
+      _collectDescendantIds(existingCategory, excludeIds);
+    }
+
+    final parentOptions = _flatCategories
+        .where((c) => !excludeIds.contains(c['_id']?.toString()))
+        .toList();
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              title: Text(
+                isEdit ? 'Edit Category' : 'Add Category',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Name
+                    TextField(
+                      controller: titleCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'Category Name *',
+                        hintText: 'e.g., Dairy, Leafy Greens',
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Parent category dropdown
+                    DropdownButtonFormField<String>(
+                      value: selectedParentId,
+                      decoration: InputDecoration(
+                        labelText: 'Parent Category',
+                        hintText: 'None (root level)',
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text('None (root level)'),
+                        ),
+                        ...parentOptions.map((c) {
+                          final path =
+                              buildCategoryPath(c, _flatCategories);
+                          return DropdownMenuItem<String>(
+                            value: c['_id']?.toString(),
+                            child: Text(path,
+                                overflow: TextOverflow.ellipsis),
+                          );
+                        }),
+                      ],
+                      onChanged: (val) {
+                        setDialogState(() => selectedParentId = val);
+                      },
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Description
+                    TextField(
+                      controller: descCtrl,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        labelText: 'Description (optional)',
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text('Cancel', style: GoogleFonts.poppins()),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    final name = titleCtrl.text.trim();
+                    if (name.isEmpty) return;
+                    try {
+                      final body = <String, dynamic>{
+                        'title': name,
+                        'description': descCtrl.text.trim(),
+                        'parent_category_id': selectedParentId,
+                      };
+                      if (isEdit) {
+                        await _apiService.updateInventoryCategory(
+                            existingCategory['_id'], body);
+                      } else {
+                        await _apiService.createInventoryCategory(body);
+                      }
+                      if (mounted) Navigator.pop(ctx);
+                      _loadData();
+                      if (mounted) {
+                        showSuccessSnack(context,
+                            isEdit ? 'Category updated' : 'Category created');
+                      }
+                    } catch (e) {
+                      if (mounted) showErrorSnack(context, '$e');
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Appcolor.foodPrimary),
+                  child: Text(isEdit ? 'Save' : 'Add',
+                      style: const TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Collects the [id] of [node] + all its descendants into [ids].
+  void _collectDescendantIds(dynamic node, Set<String> ids) {
+    final id = node['_id']?.toString();
+    if (id != null) ids.add(id);
+    final children = node['children'] as List<dynamic>? ?? [];
+    for (final child in children) {
+      _collectDescendantIds(child, ids);
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // DELETE CATEGORY
+  // ───────────────────────────────────────────────────────────────────────────
+
+  Future<void> _deleteCategory(dynamic category) async {
+    final children = category['children'] as List<dynamic>? ?? [];
+    final title = category['title'] ?? 'this category';
+    final message = children.isNotEmpty
+        ? 'Cannot delete "$title" because it has ${children.length} '
+            'subcategor${children.length == 1 ? "y" : "ies"}. '
+            'Remove them first.'
+        : 'Are you sure you want to delete "$title"?';
+
+    if (children.isNotEmpty) {
+      // Just inform — the backend will also reject it.
+      showErrorSnack(context, message);
+      return;
+    }
+
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete Category',
+      message: message,
+    );
+    if (!confirmed) return;
+
+    try {
+      await _apiService.deleteInventoryCategory(category['_id']);
+      _loadData();
+      if (mounted) showSuccessSnack(context, '"$title" deleted');
+    } catch (e) {
+      if (mounted) showErrorSnack(context, '$e');
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // HELPER — add sub‑category pre‑filling the parent
+  // ───────────────────────────────────────────────────────────────────────────
+
+  void _addSubcategory(dynamic parentCategory) {
+    final parentId = parentCategory['_id']?.toString();
+    final titleCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(isEdit ? 'Edit Category' : 'Add New Category',
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Add Subcategory',
             style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Show parent path
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Appcolor.foodBg,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.subdirectory_arrow_right,
+                      size: 18, color: Appcolor.foodPrimary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Under: ${buildCategoryPath(parentCategory, _flatCategories)}',
+                      style: GoogleFonts.poppins(
+                          fontSize: 12, color: Appcolor.textMedium),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
             TextField(
               controller: titleCtrl,
               decoration: InputDecoration(
-                labelText: 'Category Name',
-                hintText: 'e.g., Fridge, Pantry, Supplies',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                labelText: 'Subcategory Name *',
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
             ),
             const SizedBox(height: 12),
@@ -115,8 +321,8 @@ class _InventoryCategoriesScreenState extends State<InventoryCategoriesScreen> {
               maxLines: 2,
               decoration: InputDecoration(
                 labelText: 'Description (optional)',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
             ),
           ],
@@ -124,375 +330,472 @@ class _InventoryCategoriesScreenState extends State<InventoryCategoriesScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: GoogleFonts.poppins()),
           ),
           ElevatedButton(
             onPressed: () async {
-              if (titleCtrl.text.isNotEmpty) {
-                try {
-                  final body = {
-                    'title': titleCtrl.text,
-                    'description': descCtrl.text,
-                  };
-                  if (isEdit) {
-                    await _apiService.updateItemCategory(existingCategory['_id'], body);
-                  } else {
-                    await _apiService.createItemCategory(body);
-                  }
-                  if (mounted) Navigator.pop(ctx);
-                  _loadData();
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error: $e')),
-                    );
-                  }
-                }
+              final name = titleCtrl.text.trim();
+              if (name.isEmpty) return;
+              try {
+                await _apiService.createInventoryCategory({
+                  'title': name,
+                  'description': descCtrl.text.trim(),
+                  'parent_category_id': parentId,
+                });
+                if (mounted) Navigator.pop(ctx);
+                // Auto‑expand the parent so the new child is visible
+                if (parentId != null) _expandedIds.add(parentId);
+                _loadData();
+                if (mounted) showSuccessSnack(context, 'Subcategory created');
+              } catch (e) {
+                if (mounted) showErrorSnack(context, '$e');
               }
             },
             style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF388E3C)),
-            child: Text(isEdit ? 'Save' : 'Add', style: const TextStyle(color: Colors.white)),
+                backgroundColor: Appcolor.foodPrimary),
+            child:
+                const Text('Add', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _deleteCategory(String categoryId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Delete Category',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        content: Text(
-            'Are you sure? Categories with items cannot be deleted.',
-            style: GoogleFonts.poppins()),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      try {
-        await _apiService.deleteItemCategory(categoryId);
-        _loadData();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
-          );
-        }
-      }
-    }
-  }
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ═══════════════════════════════════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFE8F5E9),
+      backgroundColor: Appcolor.foodBg,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 600),
-            child: _loading
-            ? const Center(
-                child: CircularProgressIndicator(color: Color(0xFF388E3C)))
-            : Column(
-                children: [
-                  // Top bar
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.arrow_back_ios,
-                              color: Color(0xFF2E3E33)),
-                        ),
-                        Expanded(
-                          child: Text(
-                            'Categories',
-                            style: GoogleFonts.poppins(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF2E3E33),
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.pushNamed(context, '/inventory-alerts'),
-                          icon: const Icon(Icons.notifications_outlined,
-                              color: Color(0xFF388E3C)),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Add New Category button
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        onPressed: _showAddCategoryDialog,
-                        icon: const Icon(Icons.add, color: Color(0xFF388E3C), size: 18),
-                        label: Text(
-                          'Add New Category',
-                          style: GoogleFonts.poppins(
-                            color: const Color(0xFF388E3C),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Color(0xFF388E3C)),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Categories list
-                  Expanded(
-                    child: _categories.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.category_outlined,
-                                    size: 64, color: Colors.grey[300]),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'No categories yet',
-                                  style: GoogleFonts.poppins(
-                                      color: Colors.grey[500], fontSize: 16),
-                                ),
-                              ],
-                            ),
-                          )
-                        : RefreshIndicator(
-                            onRefresh: _loadData,
-                            child: ListView.builder(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20),
-                              itemCount: _categories.length,
-                              itemBuilder: (context, index) {
-                                final cat = _categories[index];
-                                return _buildCategoryCard(cat);
-                              },
-                            ),
-                          ),
-                  ),
-                ],
-              ),
+            child: Column(
+              children: [
+                _buildHeader(),
+                _buildSearchBar(),
+                const SizedBox(height: 8),
+                _buildStats(),
+                const SizedBox(height: 4),
+                Expanded(child: _buildBody()),
+              ],
+            ),
+          ),
+        ),
       ),
-      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showCategoryDialog(),
+        backgroundColor: Appcolor.foodPrimary,
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: Text('Add Category',
+            style: GoogleFonts.poppins(
+                color: Colors.white, fontWeight: FontWeight.w600)),
       ),
     );
   }
 
-  Widget _buildCategoryCard(dynamic category) {
-    final catId = category['_id'];
-    final title = category['title'] ?? '';
-    final itemCount = _getItemCount(catId);
-    final categoryItems = _getCategoryItems(catId);
-    final icon = _getCategoryIcon(title);
+  // ── Header ───────────────────────────────────────────────────────────────
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFC8E6C9),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
         children: [
-          // Category header
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon, color: const Color(0xFF388E3C), size: 24),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: const Color(0xFF2E3E33),
-                        ),
-                      ),
-                      Text(
-                        '$itemCount items',
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => _showAddCategoryDialog(existingCategory: category),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.5),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(Icons.settings_outlined,
-                        color: Colors.grey[700], size: 20),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                GestureDetector(
-                  onTap: () => _deleteCategory(catId),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.5),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(Icons.close,
-                        color: Colors.grey[700], size: 20),
-                  ),
-                ),
-              ],
+          IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back_ios, color: Appcolor.textDark),
+          ),
+          Expanded(
+            child: Text(
+              'Categories',
+              style: GoogleFonts.poppins(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Appcolor.textDark,
+              ),
             ),
           ),
-
-          // Items grid within category — Figma style
-          if (categoryItems.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 2.2,
-                ),
-                itemCount: categoryItems.length > 6
-                    ? 6
-                    : categoryItems.length,
-                itemBuilder: (context, index) {
-                  final item = categoryItems[index];
-                  final lowStock = _isLowStock(item);
-                  final qty = item['quantity'] ?? 0;
-                  final threshold = item['threshold_quantity'] ?? 1;
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: lowStock ? Colors.white : const Color(0xFFE8F5E9),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border(
-                        left: BorderSide(
-                          color: lowStock ? Colors.orange[400]! : const Color(0xFF388E3C),
-                          width: 3,
-                        ),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                item['item_name'] ?? '',
-                                style: GoogleFonts.poppins(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            Text(
-                              '$qty',
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: const Color(0xFF2E3E33),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'minimum',
-                              style: GoogleFonts.poppins(
-                                fontSize: 11,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            Text(
-                              '$threshold',
-                              style: GoogleFonts.poppins(
-                                fontSize: 11,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-
-          // "View more" if > 6 items
-          if (categoryItems.length > 6)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Center(
-                child: Text(
-                  '+ ${categoryItems.length - 6} more items',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: const Color(0xFF388E3C),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
+          // Expand / collapse all
+          IconButton(
+            tooltip: 'Expand all',
+            onPressed: () {
+              setState(() {
+                for (final cat in _flatCategories) {
+                  final id = cat['_id']?.toString();
+                  if (id != null) _expandedIds.add(id);
+                }
+              });
+            },
+            icon: const Icon(Icons.unfold_more, color: Appcolor.foodPrimary),
+          ),
+          IconButton(
+            tooltip: 'Collapse all',
+            onPressed: () => setState(() => _expandedIds.clear()),
+            icon: const Icon(Icons.unfold_less, color: Appcolor.foodPrimary),
+          ),
         ],
       ),
+    );
+  }
+
+  // ── Search bar ───────────────────────────────────────────────────────────
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: TextField(
+          onChanged: (val) => setState(() {
+            _searchQuery = val;
+            // When searching, auto‑expand everything so matches are visible
+            if (val.isNotEmpty) {
+              for (final cat in _flatCategories) {
+                final id = cat['_id']?.toString();
+                if (id != null) _expandedIds.add(id);
+              }
+            }
+          }),
+          decoration: InputDecoration(
+            hintText: 'Search categories...',
+            hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+            prefixIcon: Icon(Icons.search, color: Colors.grey[400]),
+            border: InputBorder.none,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Stats bar ────────────────────────────────────────────────────────────
+
+  Widget _buildStats() {
+    final rootCount = _treeCategories.length;
+    final totalCount = _flatCategories.length;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+      child: Row(
+        children: [
+          _statChip(Icons.folder_outlined, '$rootCount root'),
+          const SizedBox(width: 12),
+          _statChip(Icons.account_tree_outlined, '$totalCount total'),
+        ],
+      ),
+    );
+  }
+
+  Widget _statChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Appcolor.foodPrimary),
+          const SizedBox(width: 4),
+          Text(label,
+              style: GoogleFonts.poppins(
+                  fontSize: 12, color: Appcolor.textMedium)),
+        ],
+      ),
+    );
+  }
+
+  // ── Body ─────────────────────────────────────────────────────────────────
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(
+        child: CircularProgressIndicator(color: Appcolor.foodPrimary),
+      );
+    }
+
+    final visibleRoots =
+        _treeCategories.where(_nodeMatchesSearch).toList();
+
+    if (visibleRoots.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.category_outlined, size: 64, color: Colors.grey[300]),
+            const SizedBox(height: 12),
+            Text(
+              _searchQuery.isNotEmpty
+                  ? 'No matching categories'
+                  : 'No categories yet',
+              style: GoogleFonts.poppins(color: Colors.grey[500], fontSize: 16),
+            ),
+            if (_searchQuery.isEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Tap + to create your first category',
+                style:
+                    GoogleFonts.poppins(color: Colors.grey[400], fontSize: 13),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      color: Appcolor.foodPrimary,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 90),
+        itemCount: visibleRoots.length,
+        itemBuilder: (_, i) =>
+            _buildTreeNode(visibleRoots[i], depth: 0, colorIndex: i),
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TREE NODE WIDGET
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildTreeNode(dynamic node,
+      {required int depth, required int colorIndex}) {
+    final id = node['_id']?.toString() ?? '';
+    final title = (node['title'] ?? '').toString();
+    final desc = (node['description'] ?? '').toString();
+    final children = (node['children'] as List<dynamic>?) ?? [];
+    final hasChildren = children.isNotEmpty;
+    final isExpanded = _expandedIds.contains(id);
+    final icon = getCategoryIcon(title);
+    final color =
+        Appcolor.categoryColors[colorIndex % Appcolor.categoryColors.length];
+
+    // Determine how many categories exist in this sub‑tree
+    final totalDescendants = _countDescendants(node);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ── Node tile ──
+        GestureDetector(
+          onTap: hasChildren
+              ? () => setState(() {
+                    isExpanded
+                        ? _expandedIds.remove(id)
+                        : _expandedIds.add(id);
+                  })
+              : null,
+          child: Container(
+            margin: EdgeInsets.only(
+              left: depth * 20.0,
+              bottom: 8,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: depth == 0
+                  ? Border(left: BorderSide(color: color, width: 4))
+                  : null,
+              boxShadow: [
+                if (depth == 0)
+                  BoxShadow(
+                    color: color.withOpacity(0.08),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  // Expand / leaf icon
+                  if (hasChildren)
+                    AnimatedRotation(
+                      turns: isExpanded ? 0.25 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      child: const Icon(Icons.chevron_right,
+                          size: 22, color: Appcolor.textMedium),
+                    )
+                  else
+                    const SizedBox(width: 22),
+
+                  const SizedBox(width: 6),
+
+                  // Category icon
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: depth == 0
+                          ? color.withOpacity(0.12)
+                          : Appcolor.foodBg,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon,
+                        size: 20,
+                        color: depth == 0 ? color : Appcolor.foodPrimary),
+                  ),
+
+                  const SizedBox(width: 10),
+
+                  // Title + meta
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                            fontSize: depth == 0 ? 15 : 14,
+                            color: Appcolor.textDark,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (desc.isNotEmpty)
+                          Text(
+                            desc,
+                            style: GoogleFonts.poppins(
+                                fontSize: 11, color: Appcolor.textLight),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        if (hasChildren)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              '${children.length} subcategor${children.length == 1 ? "y" : "ies"}'
+                              '${totalDescendants > children.length ? " ($totalDescendants total)" : ""}',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 11, color: Appcolor.textLight),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  // Depth badge for nested items
+                  if (depth > 0)
+                    Container(
+                      margin: const EdgeInsets.only(right: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Appcolor.foodBg,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'L${depth + 1}',
+                        style: GoogleFonts.poppins(
+                            fontSize: 10, color: Appcolor.textLight),
+                      ),
+                    ),
+
+                  // Action buttons
+                  _nodePopupMenu(node),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // ── Children (visible when expanded) ──
+        if (isExpanded && hasChildren)
+          ...children
+              .where(_nodeMatchesSearch)
+              .toList()
+              .asMap()
+              .entries
+              .map((e) => _buildTreeNode(
+                    e.value,
+                    depth: depth + 1,
+                    colorIndex: colorIndex,
+                  )),
+      ],
+    );
+  }
+
+  /// Count all descendants (not just direct children).
+  int _countDescendants(dynamic node) {
+    final children = (node['children'] as List<dynamic>?) ?? [];
+    int count = children.length;
+    for (final child in children) {
+      count += _countDescendants(child);
+    }
+    return count;
+  }
+
+  // ── Popup menu for each node ─────────────────────────────────────────────
+
+  Widget _nodePopupMenu(dynamic node) {
+    return PopupMenuButton<String>(
+      icon: Icon(Icons.more_vert, color: Colors.grey[400], size: 20),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onSelected: (action) {
+        switch (action) {
+          case 'edit':
+            _showCategoryDialog(existingCategory: node);
+            break;
+          case 'add_sub':
+            _addSubcategory(node);
+            break;
+          case 'delete':
+            _deleteCategory(node);
+            break;
+        }
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: 'edit',
+          child: Row(
+            children: [
+              const Icon(Icons.edit_outlined,
+                  size: 18, color: Appcolor.foodPrimary),
+              const SizedBox(width: 8),
+              Text('Edit', style: GoogleFonts.poppins(fontSize: 14)),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'add_sub',
+          child: Row(
+            children: [
+              const Icon(Icons.add_circle_outline,
+                  size: 18, color: Appcolor.info),
+              const SizedBox(width: 8),
+              Text('Add Subcategory',
+                  style: GoogleFonts.poppins(fontSize: 14)),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              const Icon(Icons.delete_outline, size: 18, color: Appcolor.error),
+              const SizedBox(width: 8),
+              Text('Delete',
+                  style:
+                      GoogleFonts.poppins(fontSize: 14, color: Appcolor.error)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

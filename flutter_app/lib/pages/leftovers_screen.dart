@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../core/services/api_service.dart';
+import '../core/styling/app_color.dart';
+import '../core/utils/food_utils.dart';
 
 class LeftoversScreen extends StatefulWidget {
   const LeftoversScreen({super.key});
@@ -48,11 +50,7 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
       });
     } catch (e) {
       setState(() => _loading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+      if (mounted) showErrorSnack(context, 'Error: $e');
     }
   }
 
@@ -101,19 +99,19 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
     if (days == 0) return Colors.deepOrange;
     if (days <= 2) return Colors.orange;
     if (days <= 5) return Colors.amber[700]!;
-    return const Color(0xFF388E3C);
+    return Appcolor.foodPrimary;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFE8F5E9),
+      backgroundColor: Appcolor.foodBg,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 700),
             child: _loading
-                ? const Center(child: CircularProgressIndicator(color: Color(0xFF388E3C)))
+                ? const Center(child: CircularProgressIndicator(color: Appcolor.foodPrimary))
                 : Column(
                     children: [
                       // Header
@@ -130,7 +128,7 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: const Icon(Icons.arrow_back_ios_new,
-                                    size: 18, color: Color(0xFF388E3C)),
+                                    size: 18, color: Appcolor.foodPrimary),
                               ),
                             ),
                             const SizedBox(width: 14),
@@ -139,7 +137,7 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
                                   style: GoogleFonts.poppins(
                                       fontSize: 24,
                                       fontWeight: FontWeight.bold,
-                                      color: const Color(0xFF2E3E33))),
+                                      color: Appcolor.textDark)),
                             ),
                             _buildSummaryBadge(),
                           ],
@@ -156,7 +154,7 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
                         child: TabBar(
                           controller: _tabCtrl,
                           indicator: BoxDecoration(
-                            color: const Color(0xFF388E3C),
+                            color: Appcolor.foodPrimary,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           labelColor: Colors.white,
@@ -183,7 +181,7 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
                                 style: GoogleFonts.poppins(
                                     color: Colors.white, fontWeight: FontWeight.w600)),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF388E3C),
+                              backgroundColor: Appcolor.foodPrimary,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12)),
@@ -261,18 +259,16 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
   }
 
   Widget _buildLeftoverCard(dynamic lo) {
-    final name = lo['name'] ?? 'Unknown';
+    final name = lo['item_name'] ?? 'Unknown';
     final qty = lo['quantity'] ?? 0;
     final unitData = lo['unit_id'];
     final unitName = unitData is Map ? (unitData['unit_name'] ?? '') : '';
     final expiry = lo['expiry_date'];
     final days = _daysUntil(expiry);
     final color = _expiryColor(days);
-    final catData = lo['leftover_category_id'];
-    final catName = catData is Map ? (catData['name'] ?? '') : '';
+    final catData = lo['category_id'];
+    final catName = catData is Map ? (catData['title'] ?? '') : '';
     final id = lo['_id'] ?? '';
-    final storedAt = lo['stored_at'] ?? '';
-    final notes = lo['notes'] ?? '';
 
     String expiryText;
     if (days < 0) {
@@ -320,11 +316,11 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
                     children: [
                       Text(name,
                           style: GoogleFonts.poppins(
-                              fontWeight: FontWeight.bold, fontSize: 15, color: const Color(0xFF2E3E33))),
+                              fontWeight: FontWeight.bold, fontSize: 15, color: Appcolor.textDark)),
                       const SizedBox(height: 2),
                       Text('$qty $unitName',
                           style: GoogleFonts.poppins(
-                              fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF388E3C))),
+                              fontSize: 13, fontWeight: FontWeight.w600, color: Appcolor.foodPrimary)),
                     ],
                   ),
                 ),
@@ -359,21 +355,8 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
                         style: GoogleFonts.poppins(fontSize: 10, color: Colors.purple[700], fontWeight: FontWeight.w500)),
                   ),
                 ],
-                if (storedAt.toString().isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Icon(Icons.kitchen, size: 14, color: Colors.grey[500]),
-                  const SizedBox(width: 2),
-                  Text(storedAt, style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[600])),
-                ],
               ],
             ),
-            if (notes.toString().isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(notes,
-                  style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500], fontStyle: FontStyle.italic),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis),
-            ],
             if (expiry != null) ...[
               const SizedBox(height: 8),
               // Expiry progress bar
@@ -412,18 +395,16 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
 
   void _showAddEditDialog({dynamic leftover}) {
     final isEdit = leftover != null;
-    final nameCtrl = TextEditingController(text: isEdit ? (leftover['name'] ?? '') : '');
+    final nameCtrl = TextEditingController(text: isEdit ? (leftover['item_name'] ?? '') : '');
     final qtyCtrl = TextEditingController(text: isEdit ? '${leftover['quantity'] ?? ''}' : '');
-    final notesCtrl = TextEditingController(text: isEdit ? (leftover['notes'] ?? '') : '');
-    final storedCtrl = TextEditingController(text: isEdit ? (leftover['stored_at'] ?? '') : '');
 
     String? selectedUnitId = isEdit
         ? (leftover['unit_id'] is Map ? leftover['unit_id']['_id'] : leftover['unit_id'])
         : null;
     String? selectedCatId = isEdit
-        ? (leftover['leftover_category_id'] is Map
-            ? leftover['leftover_category_id']['_id']
-            : leftover['leftover_category_id'])
+        ? (leftover['category_id'] is Map
+            ? leftover['category_id']['_id']
+            : leftover['category_id'])
         : null;
     DateTime? expiryDate;
     if (isEdit && leftover['expiry_date'] != null) {
@@ -448,7 +429,7 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _dialogField('Name', nameCtrl, 'Leftover name'),
+                      _dialogField('Item Name', nameCtrl, 'Leftover name'),
                       const SizedBox(height: 12),
                       Row(
                         children: [
@@ -506,7 +487,7 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
                           items: _categories.map((c) {
                             return DropdownMenuItem<String>(
                               value: c['_id'],
-                              child: Text(c['name'] ?? '', style: GoogleFonts.poppins(fontSize: 13)),
+                              child: Text(c['title'] ?? '', style: GoogleFonts.poppins(fontSize: 13)),
                             );
                           }).toList(),
                           onChanged: (val) => setDialogState(() => selectedCatId = val),
@@ -552,10 +533,7 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
                           ),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      _dialogField('Stored At', storedCtrl, 'e.g. Fridge, Freezer'),
-                      const SizedBox(height: 12),
-                      _dialogField('Notes', notesCtrl, 'Optional notes', maxLines: 2),
+
                     ],
                   ),
                 ),
@@ -569,12 +547,10 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
                   onPressed: () async {
                     if (nameCtrl.text.trim().isEmpty) return;
                     final body = <String, dynamic>{
-                      'name': nameCtrl.text.trim(),
+                      'item_name': nameCtrl.text.trim(),
                       'quantity': double.tryParse(qtyCtrl.text) ?? 0,
                       'unit_id': selectedUnitId,
-                      'leftover_category_id': selectedCatId,
-                      'stored_at': storedCtrl.text.trim(),
-                      'notes': notesCtrl.text.trim(),
+                      'category_id': selectedCatId,
                     };
                     if (expiryDate != null) {
                       body['expiry_date'] = expiryDate!.toIso8601String();
@@ -593,7 +569,7 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
                       );
                     }
                   },
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF388E3C)),
+                  style: ElevatedButton.styleFrom(backgroundColor: Appcolor.foodPrimary),
                   child: Text(isEdit ? 'Save' : 'Add', style: const TextStyle(color: Colors.white)),
                 ),
               ],
@@ -626,30 +602,17 @@ class _LeftoversScreenState extends State<LeftoversScreen> with SingleTickerProv
   }
 
   Future<void> _deleteLeftover(String id) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Delete Leftover', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        content: Text('Are you sure?', style: GoogleFonts.poppins()),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+    final confirm = await showConfirmDialog(
+      context,
+      title: 'Delete Leftover',
+      message: 'Are you sure you want to delete this leftover?',
     );
-    if (confirm == true) {
+    if (confirm) {
       try {
         await _apiService.deleteLeftover(id);
         _loadData();
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-        }
+        if (mounted) showErrorSnack(context, 'Error: $e');
       }
     }
   }

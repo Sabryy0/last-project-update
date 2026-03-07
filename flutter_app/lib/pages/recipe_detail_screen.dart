@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/services/api_service.dart';
+import '../core/styling/app_color.dart';
+import '../core/utils/food_utils.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
   final dynamic recipe;
@@ -25,6 +27,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   final _servingsCtrl = TextEditingController();
   final _prepTimeCtrl = TextEditingController();
   final _cookTimeCtrl = TextEditingController();
+  String _selectedCategory = 'Other';
 
   int _scaledServings = 1;
 
@@ -52,6 +55,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     _prepTimeCtrl.text = '${_recipe['prep_time'] ?? ''}';
     _cookTimeCtrl.text = '${_recipe['cook_time'] ?? ''}';
     _scaledServings = _recipe['serving_size'] ?? 1;
+    _selectedCategory = _recipe['category'] ?? 'Other';
   }
 
   Future<void> _loadSupportData() async {
@@ -69,7 +73,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       if (!_isNew && _recipe['_id'] != null) {
         final fresh = await _apiService.getRecipe(_recipe['_id']);
         setState(() {
-          _recipe = fresh;
+          _recipe = fresh['data']?['recipe'] ?? fresh;
           _populateForm();
         });
       }
@@ -90,6 +94,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     try {
       final body = {
         'recipe_name': _nameCtrl.text.trim(),
+        'category': _selectedCategory,
         'description': _descCtrl.text.trim(),
         'serving_size': int.tryParse(_servingsCtrl.text) ?? 1,
         'prep_time': int.tryParse(_prepTimeCtrl.text) ?? 0,
@@ -99,7 +104,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       if (_isNew) {
         final created = await _apiService.createRecipe(body);
         setState(() {
-          _recipe = created;
+          _recipe = created['data']?['recipe'] ?? created;
           _isNew = false;
           _editing = false;
         });
@@ -111,7 +116,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       } else {
         final updated = await _apiService.updateRecipe(_recipe['_id'], body);
         setState(() {
-          _recipe = updated;
+          _recipe = updated['data']?['recipe'] ?? updated;
           _editing = false;
         });
         if (mounted) {
@@ -146,7 +151,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     final steps = (_recipe != null ? _recipe['steps'] as List<dynamic>? : null) ?? [];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFE8F5E9),
+      backgroundColor: Appcolor.foodBg,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -166,7 +171,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(Icons.arrow_back_ios_new, size: 18, color: Color(0xFF388E3C)),
+                          child: const Icon(Icons.arrow_back_ios_new, size: 18, color: Appcolor.foodPrimary),
                         ),
                       ),
                       const SizedBox(width: 14),
@@ -176,7 +181,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                           style: GoogleFonts.poppins(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
-                            color: const Color(0xFF2E3E33),
+                            color: Appcolor.textDark,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -184,7 +189,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                       if (!_isNew && !_editing)
                         IconButton(
                           onPressed: () => setState(() => _editing = true),
-                          icon: const Icon(Icons.edit_outlined, color: Color(0xFF388E3C)),
+                          icon: const Icon(Icons.edit_outlined, color: Appcolor.foodPrimary),
                         ),
                     ],
                   ),
@@ -207,7 +212,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                             child: ElevatedButton(
                               onPressed: _loading ? null : _saveRecipe,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF388E3C),
+                                backgroundColor: Appcolor.foodPrimary,
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               ),
@@ -260,9 +265,48 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Recipe Details',
-              style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF2E3E33))),
+              style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold, color: Appcolor.textDark)),
           const SizedBox(height: 14),
           _buildField('Recipe Name', _nameCtrl, 'Enter recipe name', enabled: _editing),
+          const SizedBox(height: 12),
+          // Category dropdown
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Category', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey[700])),
+              const SizedBox(height: 6),
+              _editing
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[400]!),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value: _selectedCategory,
+                          items: ['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Snack', 'Appetizer', 'Main Course', 'Side Dish', 'Beverage', 'Other']
+                              .map((cat) => DropdownMenuItem(value: cat, child: Text(cat, style: GoogleFonts.poppins(fontSize: 14))))
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) setState(() => _selectedCategory = val);
+                          },
+                        ),
+                      ),
+                    )
+                  : Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: Text(_selectedCategory, style: GoogleFonts.poppins(fontSize: 14)),
+                    ),
+            ],
+          ),
           const SizedBox(height: 12),
           _buildField('Description', _descCtrl, 'Brief description (optional)',
               enabled: _editing, maxLines: 3),
@@ -318,11 +362,11 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF388E3C).withOpacity(0.2)),
+        border: Border.all(color: Appcolor.foodPrimary.withOpacity(0.2)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.scale, color: Color(0xFF388E3C), size: 22),
+          const Icon(Icons.scale, color: Appcolor.foodPrimary, size: 22),
           const SizedBox(width: 12),
           Text('Scale:', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
           const Spacer(),
@@ -330,13 +374,13 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
             onPressed: _scaledServings > 1
                 ? () => setState(() => _scaledServings--)
                 : null,
-            icon: const Icon(Icons.remove_circle_outline, color: Color(0xFF388E3C)),
+            icon: const Icon(Icons.remove_circle_outline, color: Appcolor.foodPrimary),
           ),
           Text('$_scaledServings servings',
               style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 15)),
           IconButton(
             onPressed: () => setState(() => _scaledServings++),
-            icon: const Icon(Icons.add_circle_outline, color: Color(0xFF388E3C)),
+            icon: const Icon(Icons.add_circle_outline, color: Appcolor.foodPrimary),
           ),
           if (scale != 1.0)
             Container(
@@ -347,7 +391,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
               ),
               child: Text('${scale.toStringAsFixed(1)}x',
                   style: GoogleFonts.poppins(
-                      fontSize: 12, color: const Color(0xFF388E3C), fontWeight: FontWeight.w600)),
+                      fontSize: 12, color: Appcolor.foodPrimary, fontWeight: FontWeight.w600)),
             ),
         ],
       ),
@@ -386,11 +430,11 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.add, size: 16, color: Color(0xFF388E3C)),
+                      const Icon(Icons.add, size: 16, color: Appcolor.foodPrimary),
                       const SizedBox(width: 4),
                       Text('Add',
                           style: GoogleFonts.poppins(
-                              fontSize: 12, color: const Color(0xFF388E3C), fontWeight: FontWeight.w600)),
+                              fontSize: 12, color: Appcolor.foodPrimary, fontWeight: FontWeight.w600)),
                     ],
                   ),
                 ),
@@ -409,21 +453,23 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           else
             ...ingredients.asMap().entries.map((entry) {
               final ing = entry.value;
-              final itemData = ing['item_id'];
-              final itemName = itemData is Map ? (itemData['item_name'] ?? 'Unknown') : 'Item';
+              final ingredientName = ing['ingredient_name'] ?? 'Unknown';
               final unitData = ing['unit_id'];
               final unitName = unitData is Map ? (unitData['unit_name'] ?? '') : '';
               final qty = (ing['quantity'] ?? 0);
               final scaledQty = qty is num ? (qty * scale) : qty;
               final ingId = ing['_id'] ?? '';
+              final inInventory = _isInInventory(ingredientName);
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFAFAFA),
+                  color: inInventory ? const Color(0xFFFAFAFA) : const Color(0xFFFFF8E1),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.grey[200]!),
+                  border: Border.all(
+                    color: inInventory ? Colors.grey[200]! : Colors.orange[200]!,
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -431,7 +477,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                       width: 30,
                       height: 30,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFF3E0),
+                        color: inInventory ? const Color(0xFFFFF3E0) : Colors.orange[100],
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Center(
@@ -442,13 +488,36 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Text(itemName,
-                          style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 14)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(ingredientName,
+                              style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 14)),
+                          Row(
+                            children: [
+                              Icon(
+                                inInventory ? Icons.check_circle : Icons.warning_amber_rounded,
+                                size: 12,
+                                color: inInventory ? Appcolor.foodPrimary : Colors.orange[700],
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                inInventory ? 'In stock' : 'Not in inventory',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  color: inInventory ? Appcolor.foodPrimary : Colors.orange[700],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                     Text(
                       '${scaledQty is num ? scaledQty.toStringAsFixed(scaledQty == scaledQty.roundToDouble() ? 0 : 1) : scaledQty} $unitName',
                       style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w600, fontSize: 13, color: const Color(0xFF388E3C)),
+                          fontWeight: FontWeight.w600, fontSize: 13, color: Appcolor.foodPrimary),
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
@@ -487,17 +556,17 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE8F5E9),
+                    color: Appcolor.foodBg,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.add, size: 16, color: Color(0xFF388E3C)),
+                      const Icon(Icons.add, size: 16, color: Appcolor.foodPrimary),
                       const SizedBox(width: 4),
                       Text('Add',
                           style: GoogleFonts.poppins(
-                              fontSize: 12, color: const Color(0xFF388E3C), fontWeight: FontWeight.w600)),
+                              fontSize: 12, color: Appcolor.foodPrimary, fontWeight: FontWeight.w600)),
                     ],
                   ),
                 ),
@@ -565,16 +634,55 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     );
   }
 
+  // Check if an ingredient name matches any inventory item
+  bool _isInInventory(String ingredientName) {
+    final lower = ingredientName.toLowerCase().trim();
+    return _inventoryItems.any((item) =>
+        (item['item_name'] ?? '').toString().toLowerCase().trim() == lower);
+  }
+
+  // Get inventory item details for an ingredient name (if available)
+  Map<String, dynamic>? _getInventoryMatch(String ingredientName) {
+    final lower = ingredientName.toLowerCase().trim();
+    try {
+      return _inventoryItems.firstWhere((item) =>
+          (item['item_name'] ?? '').toString().toLowerCase().trim() == lower);
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _showAddIngredientDialog() {
-    String? selectedItemId;
+    final nameCtrl = TextEditingController();
     String? selectedUnitId;
     final qtyCtrl = TextEditingController();
+    List<String> suggestions = [];
 
     showDialog(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            // Build autocomplete suggestions from inventory
+            void updateSuggestions(String query) {
+              if (query.isEmpty) {
+                suggestions = [];
+              } else {
+                suggestions = _inventoryItems
+                    .where((item) => (item['item_name'] ?? '')
+                        .toString()
+                        .toLowerCase()
+                        .contains(query.toLowerCase()))
+                    .map<String>((item) => item['item_name'].toString())
+                    .take(5)
+                    .toList();
+              }
+              setDialogState(() {});
+            }
+
+            final isAvailable = nameCtrl.text.trim().isNotEmpty &&
+                _isInInventory(nameCtrl.text.trim());
+
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: Text('Add Ingredient',
@@ -585,29 +693,102 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Inventory Item',
+                    Text('Ingredient Name',
                         style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
                     const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey[300]!),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: DropdownButton<String>(
-                        value: selectedItemId,
-                        isExpanded: true,
-                        underline: const SizedBox(),
-                        hint: Text('Select item', style: GoogleFonts.poppins(fontSize: 13)),
-                        items: _inventoryItems.map((item) {
-                          return DropdownMenuItem<String>(
-                            value: item['_id'],
-                            child: Text(item['item_name'] ?? '', style: GoogleFonts.poppins(fontSize: 13)),
-                          );
-                        }).toList(),
-                        onChanged: (val) => setDialogState(() => selectedItemId = val),
+                    TextField(
+                      controller: nameCtrl,
+                      onChanged: (val) => updateSuggestions(val),
+                      decoration: InputDecoration(
+                        hintText: 'e.g., Chicken, Rice, Tomato...',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        suffixIcon: nameCtrl.text.trim().isNotEmpty
+                            ? Icon(
+                                isAvailable ? Icons.check_circle : Icons.info_outline,
+                                color: isAvailable ? Appcolor.foodPrimary : Colors.orange,
+                                size: 20,
+                              )
+                            : null,
                       ),
                     ),
+                    // Autocomplete suggestions from inventory
+                    if (suggestions.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(top: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: Colors.grey[300]!),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        constraints: const BoxConstraints(maxHeight: 120),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: suggestions.length,
+                          itemBuilder: (_, i) => InkWell(
+                            onTap: () {
+                              nameCtrl.text = suggestions[i];
+                              nameCtrl.selection = TextSelection.fromPosition(
+                                  TextPosition(offset: nameCtrl.text.length));
+                              suggestions = [];
+                              setDialogState(() {});
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.inventory_2_outlined,
+                                      size: 16, color: Appcolor.foodPrimary),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(suggestions[i],
+                                        style: GoogleFonts.poppins(fontSize: 13)),
+                                  ),
+                                  Text('In stock',
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 11,
+                                          color: Appcolor.foodPrimary,
+                                          fontWeight: FontWeight.w500)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    // Availability indicator
+                    if (nameCtrl.text.trim().isNotEmpty && suggestions.isEmpty) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isAvailable ? Colors.green[50] : Colors.orange[50],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isAvailable ? Icons.check_circle : Icons.warning_amber_rounded,
+                              size: 14,
+                              color: isAvailable ? Appcolor.foodPrimary : Colors.orange[700],
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                isAvailable
+                                    ? 'Available in your inventory'
+                                    : 'Not in your inventory — you may need to buy this',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 11,
+                                  color: isAvailable ? Appcolor.foodPrimary : Colors.orange[700],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     Row(
                       children: [
@@ -675,10 +856,21 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                 ),
                 ElevatedButton(
                   onPressed: () async {
-                    if (selectedItemId == null || qtyCtrl.text.isEmpty) return;
+                    if (nameCtrl.text.trim().isEmpty || qtyCtrl.text.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please enter ingredient name and quantity')),
+                      );
+                      return;
+                    }
+                    if (selectedUnitId == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please select a unit')),
+                      );
+                      return;
+                    }
                     try {
                       await _apiService.addRecipeIngredient(_recipe['_id'], {
-                        'item_id': selectedItemId,
+                        'ingredient_name': nameCtrl.text.trim(),
                         'quantity': double.tryParse(qtyCtrl.text) ?? 0,
                         'unit_id': selectedUnitId,
                       });
@@ -690,7 +882,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                       );
                     }
                   },
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF388E3C)),
+                  style: ElevatedButton.styleFrom(backgroundColor: Appcolor.foodPrimary),
                   child: const Text('Add', style: TextStyle(color: Colors.white)),
                 ),
               ],
@@ -741,12 +933,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                   Navigator.pop(ctx);
                   _loadSupportData();
                 } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: $e')),
-                  );
+                  if (mounted) showErrorSnack(context, 'Error: $e');
                 }
               },
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF388E3C)),
+              style: ElevatedButton.styleFrom(backgroundColor: Appcolor.foodPrimary),
               child: const Text('Add', style: TextStyle(color: Colors.white)),
             ),
           ],
@@ -760,11 +950,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       await _apiService.removeRecipeIngredient(_recipe['_id'], ingredientId);
       _loadSupportData();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+      if (mounted) showErrorSnack(context, 'Error: $e');
     }
   }
 
@@ -773,11 +959,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       await _apiService.removeRecipeStep(_recipe['_id'], stepId);
       _loadSupportData();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+      if (mounted) showErrorSnack(context, 'Error: $e');
     }
   }
 }

@@ -1556,4 +1556,113 @@ class ApiService {
     final errorData = jsonDecode(response.body);
     throw Exception(errorData['message'] ?? 'Failed to update inventory');
   }
+
+  // ==================== GROCERY LISTS ====================
+
+  Future<List<dynamic>> getAllGroceryLists() async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/grocery-lists'),
+      headers: headers,
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['data']?['lists'] ?? [];
+    }
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to load grocery lists');
+  }
+
+  Future<Map<String, dynamic>> getGroceryListById(String listId) async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/grocery-lists/$listId'),
+      headers: headers,
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body)['data'];
+    }
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to load grocery list');
+  }
+
+  Future<Map<String, dynamic>> createGroceryList(Map<String, dynamic> data) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/grocery-lists'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+    if (response.statusCode == 201) {
+      return jsonDecode(response.body)['data']['list'];
+    }
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to create grocery list');
+  }
+
+  Future<Map<String, dynamic>> updateGroceryList(String listId, Map<String, dynamic> data) async {
+    final headers = await _getHeaders();
+    final response = await http.patch(
+      Uri.parse('$baseUrl/grocery-lists/$listId'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body)['data']['list'];
+    }
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to update grocery list');
+  }
+
+  Future<void> deleteGroceryList(String listId) async {
+    final headers = await _getHeaders();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/grocery-lists/$listId'),
+      headers: headers,
+    );
+    if (response.statusCode != 204) {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to delete grocery list');
+    }
+  }
+
+  Future<Map<String, dynamic>> addGroceryItem(String listId, Map<String, dynamic> data) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/grocery-lists/$listId/items'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+    if (response.statusCode == 201) {
+      return jsonDecode(response.body)['data']['item'];
+    }
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to add grocery item');
+  }
+
+  Future<Map<String, dynamic>> updateGroceryItem(String itemId, Map<String, dynamic> data) async {
+    final headers = await _getHeaders();
+    final response = await http.patch(
+      Uri.parse('$baseUrl/grocery-lists/items/$itemId'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body)['data']['item'];
+    }
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to update grocery item');
+  }
+
+  Future<void> deleteGroceryItem(String itemId) async {
+    final headers = await _getHeaders();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/grocery-lists/items/$itemId'),
+      headers: headers,
+    );
+    if (response.statusCode != 204) {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to delete grocery item');
+    }
+  }
 }

@@ -1354,8 +1354,8 @@ class _HomePageState extends State<HomePage> {
             children: [
               _buildNavItem(Icons.home, 'Home', 0),
               _buildNavItem(Icons.dashboard, 'Dashboard', 1),
-              _buildNavItem(Icons.checklist, 'Tasks', 2),
-              _buildNavItem(Icons.stars, 'Points', 3),
+              _buildNavItem(Icons.calendar_today, 'Schedule', 2),
+              _buildNavItem(Icons.chat_bubble_outline, 'Chat', 3),
               _buildNavItem(Icons.settings, 'Settings', 4),
             ],
           ),
@@ -1376,10 +1376,14 @@ class _HomePageState extends State<HomePage> {
             Navigator.pushNamed(context, '/dashboard');
             break;
           case 2:
-            Navigator.pushNamed(context, '/tasks');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Schedule - Coming soon!')),
+            );
             break;
           case 3:
-            Navigator.pushNamed(context, '/family-points');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Chat - Coming soon!')),
+            );
             break;
           case 4:
             Navigator.push(

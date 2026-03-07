@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/services/api_service.dart';
+import '../core/styling/app_color.dart';
+import '../core/utils/food_utils.dart';
 import 'recipe_detail_screen.dart';
 
 class RecipesScreen extends StatefulWidget {
@@ -41,11 +43,7 @@ class _RecipesScreenState extends State<RecipesScreen> {
       });
     } catch (e) {
       setState(() => _loading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading recipes: $e')),
-        );
-      }
+      if (mounted) showErrorSnack(context, 'Error loading recipes: $e');
     }
   }
 
@@ -63,38 +61,18 @@ class _RecipesScreenState extends State<RecipesScreen> {
   }
 
   Future<void> _deleteRecipe(String id) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Delete Recipe', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        content: Text('Are you sure you want to delete this recipe?',
-            style: GoogleFonts.poppins()),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+    final confirm = await showConfirmDialog(
+      context,
+      title: 'Delete Recipe',
+      message: 'Are you sure you want to delete this recipe?',
     );
-    if (confirm == true) {
+    if (confirm) {
       try {
         await _apiService.deleteRecipe(id);
         _loadRecipes();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Recipe deleted')),
-          );
-        }
+        if (mounted) showSuccessSnack(context, 'Recipe deleted');
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
-          );
-        }
+        if (mounted) showErrorSnack(context, 'Error: $e');
       }
     }
   }
@@ -122,13 +100,13 @@ class _RecipesScreenState extends State<RecipesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFE8F5E9),
+      backgroundColor: Appcolor.foodBg,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 700),
             child: _loading
-                ? const Center(child: CircularProgressIndicator(color: Color(0xFF388E3C)))
+                ? const Center(child: CircularProgressIndicator(color: Appcolor.foodPrimary))
                 : RefreshIndicator(
                     onRefresh: _loadRecipes,
                     child: SingleChildScrollView(
@@ -148,7 +126,7 @@ class _RecipesScreenState extends State<RecipesScreen> {
                                     color: Colors.white,
                                     borderRadius: BorderRadius.circular(10),
                                   ),
-                                  child: const Icon(Icons.arrow_back_ios_new, size: 18, color: Color(0xFF388E3C)),
+                                  child: const Icon(Icons.arrow_back_ios_new, size: 18, color: Appcolor.foodPrimary),
                                 ),
                               ),
                               const SizedBox(width: 14),
@@ -158,7 +136,7 @@ class _RecipesScreenState extends State<RecipesScreen> {
                                   style: GoogleFonts.poppins(
                                     fontSize: 24,
                                     fontWeight: FontWeight.bold,
-                                    color: const Color(0xFF2E3E33),
+                                    color: Appcolor.textDark,
                                   ),
                                 ),
                               ),
@@ -189,7 +167,7 @@ class _RecipesScreenState extends State<RecipesScreen> {
                               decoration: InputDecoration(
                                 hintText: 'Search recipes...',
                                 hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
-                                prefixIcon: const Icon(Icons.search, color: Color(0xFF388E3C)),
+                                prefixIcon: const Icon(Icons.search, color: Appcolor.foodPrimary),
                                 border: InputBorder.none,
                                 contentPadding: const EdgeInsets.symmetric(vertical: 14),
                               ),
@@ -206,7 +184,7 @@ class _RecipesScreenState extends State<RecipesScreen> {
                               label: Text('Create New Recipe',
                                   style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600)),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF388E3C),
+                                backgroundColor: Appcolor.foodPrimary,
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               ),
@@ -310,7 +288,7 @@ class _RecipesScreenState extends State<RecipesScreen> {
                           style: GoogleFonts.poppins(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: const Color(0xFF2E3E33),
+                            color: Appcolor.textDark,
                           ),
                         ),
                         if (desc.toString().isNotEmpty)

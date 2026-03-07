@@ -75,7 +75,7 @@ exports.deleteLeftoverCategory = catchAsync(async (req, res, next) => {
 exports.addLeftover = catchAsync(async (req, res, next) => {
   const { item_name, category_id, unit_id, quantity, meal_id, expiry_date } = req.body;
 
-  if (!item_name || !category_id || !unit_id || !quantity || !expiry_date) {
+  if (!item_name || !category_id || !unit_id || (quantity === undefined || quantity === null) || !expiry_date) {
     return next(new AppError("Please provide item_name, category_id, unit_id, quantity, and expiry_date", 400));
   }
 

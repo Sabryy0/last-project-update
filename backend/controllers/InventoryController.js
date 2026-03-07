@@ -41,6 +41,32 @@ exports.getAllInventories = catchAsync(async (req, res, next) => {
 });
 
 //========================================================================================
+// Update an inventory
+exports.updateInventory = catchAsync(async (req, res, next) => {
+  const { inventoryId } = req.params;
+  const { title, type } = req.body;
+
+  const inventory = await Inventory.findOne({
+    _id: inventoryId,
+    family_id: req.familyAccount._id
+  });
+
+  if (!inventory) {
+    return next(new AppError("Inventory not found", 404));
+  }
+
+  if (title) inventory.title = title;
+  if (type) inventory.type = type;
+
+  await inventory.save();
+
+  res.status(200).json({
+    status: "success",
+    data: { inventory }
+  });
+});
+
+//========================================================================================
 // Delete an inventory (RESTRICT if items exist)
 exports.deleteInventory = catchAsync(async (req, res, next) => {
   const { inventoryId } = req.params;
@@ -119,6 +145,33 @@ exports.getAllItemCategories = catchAsync(async (req, res, next) => {
 });
 
 //========================================================================================
+// Update item category
+exports.updateItemCategory = catchAsync(async (req, res, next) => {
+  const { categoryId } = req.params;
+  const { title, description, parent_category_id } = req.body;
+
+  const category = await ItemCategory.findOne({
+    _id: categoryId,
+    family_id: req.familyAccount._id
+  });
+
+  if (!category) {
+    return next(new AppError("Category not found", 404));
+  }
+
+  if (title) category.title = title;
+  if (description !== undefined) category.description = description;
+  if (parent_category_id !== undefined) category.parent_category_id = parent_category_id;
+
+  await category.save();
+
+  res.status(200).json({
+    status: "success",
+    data: { category }
+  });
+});
+
+//========================================================================================
 // Delete item category
 exports.deleteItemCategory = catchAsync(async (req, res, next) => {
   const { categoryId } = req.params;
@@ -155,7 +208,7 @@ exports.addItem = catchAsync(async (req, res, next) => {
   const { inventoryId } = req.params;
   const { item_name, item_category, quantity, unit_id, threshold_quantity, purchase_date, expiry_date, receipt_id } = req.body;
 
-  if (!item_name || !item_category || !quantity || !unit_id) {
+  if (!item_name || !item_category || quantity === undefined || quantity === null || !unit_id) {
     return next(new AppError("Please provide item_name, item_category, quantity, and unit_id", 400));
   }
 

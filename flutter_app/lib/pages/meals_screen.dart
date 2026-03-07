@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../core/services/api_service.dart';
+import '../core/widgets/app_bottom_nav.dart';
 
 class MealsScreen extends StatefulWidget {
   const MealsScreen({super.key});
@@ -985,7 +986,7 @@ class _MealsScreenState extends State<MealsScreen> {
         backgroundColor: const Color(0xFF388E3C),
         child: const Icon(Icons.add, color: Colors.white),
       ),
-      bottomNavigationBar: _buildBottomNav(context),
+      bottomNavigationBar: const AppBottomNav(selectedIndex: 0),
     );
   }
 
@@ -1165,39 +1166,4 @@ class _MealsScreenState extends State<MealsScreen> {
     );
   }
 
-  Widget _buildBottomNav(BuildContext context) {
-    return BottomNavigationBar(
-      type: BottomNavigationBarType.fixed,
-      currentIndex: 2,
-      selectedItemColor: Colors.green,
-      unselectedItemColor: Colors.grey,
-      showUnselectedLabels: true,
-      onTap: (index) {
-        switch (index) {
-          case 0:
-            Navigator.pushReplacementNamed(context, '/home');
-            break;
-          case 1:
-            Navigator.pushReplacementNamed(context, '/dashboard');
-            break;
-          case 2:
-            Navigator.pushReplacementNamed(context, '/food-hub');
-            break;
-          case 3:
-            Navigator.pushNamed(context, '/rewards');
-            break;
-          case 4:
-            Navigator.pushReplacementNamed(context, '/settings');
-            break;
-        }
-      },
-      items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
-        BottomNavigationBarItem(icon: Icon(Icons.dashboard_outlined), label: 'Dashboard'),
-        BottomNavigationBarItem(icon: Icon(Icons.restaurant_outlined), label: 'Food Hub'),
-        BottomNavigationBarItem(icon: Icon(Icons.emoji_events_outlined), label: 'Rewards'),
-        BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: 'Settings'),
-      ],
-    );
-  }
 }

@@ -21,6 +21,19 @@ const recipeSchema = new mongoose.Schema({
     required: [true, 'Please provide the serving size'],
     min: [1, 'Serving size must be at least 1']
   },
+  description: {
+    type: String,
+    default: '',
+    trim: true
+  },
+  prep_time: {
+    type: Number,
+    default: 0
+  },
+  cook_time: {
+    type: Number,
+    default: 0
+  },
   family_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'FamilyAccount',

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/services/api_service.dart';
-import 'inventory_categories_screen.dart';
+import '../core/styling/app_color.dart';
+import '../core/utils/food_utils.dart';
+import '../core/widgets/app_bottom_nav.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -96,8 +98,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
         break;
       case 'low_stock':
         result.sort((a, b) {
-          final aLow = _isLowStock(a) ? 0 : 1;
-          final bLow = _isLowStock(b) ? 0 : 1;
+          final aLow = isLowStock(a) ? 0 : 1;
+          final bLow = isLowStock(b) ? 0 : 1;
           return aLow.compareTo(bLow);
         });
         break;
@@ -107,22 +109,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
     return result;
   }
 
-  String _getUnitName(dynamic item) {
-    final unit = item['unit_id'];
-    if (unit is Map) return unit['unit_name'] ?? '';
-    return '';
-  }
-
   String _getCategoryName(dynamic item) {
     final cat = item['item_category'];
     if (cat is Map) return cat['title'] ?? '';
     return '';
-  }
-
-  bool _isLowStock(dynamic item) {
-    final qty = (item['quantity'] ?? 0);
-    final threshold = (item['threshold_quantity'] ?? 1);
-    return qty is num && threshold is num && qty <= threshold;
   }
 
   // ==================== UNIT MANAGEMENT DIALOGS ====================
@@ -472,40 +462,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    GestureDetector(
-                                      onTap: () async {
-                                        try {
-                                          await _apiService.seedUnits();
-                                          final updatedUnits = await _apiService.getAllUnits();
-                                          setState(() => _units = updatedUnits);
-                                          setDialogState(() {});
-                                          if (mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(content: Text('Default units loaded!')),
-                                            );
-                                          }
-                                        } catch (e) {
-                                          if (mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              SnackBar(content: Text('Error: $e')),
-                                            );
-                                          }
-                                        }
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.orange[50],
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(color: Colors.orange[300]!),
-                                        ),
-                                        child: Text('Seed Defaults',
-                                            style: GoogleFonts.poppins(
-                                                fontSize: 11, color: Colors.orange[800],
-                                                fontWeight: FontWeight.w500)),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
                                     GestureDetector(
                                       onTap: () => _showAddUnitDialog(setDialogState),
                                       child: Container(
@@ -1404,13 +1360,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           ),
                           TextButton(
                             onPressed: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      const InventoryCategoriesScreen(),
-                                ),
-                              );
+                              await Navigator.pushNamed(context, '/inventory-categories');
                               _loadData();
                             },
                             child: Text(
@@ -1455,7 +1405,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                   return _buildCategoryChip(
                                     cat['title'] ?? '',
                                     count,
-                                    _getCategoryIcon(cat['title'] ?? ''),
+                                    getCategoryIcon(cat['title'] ?? ''),
                                     isSelected,
                                     () {
                                       setState(() {
@@ -1476,12 +1426,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
       ),
       ),
       ),
-      bottomNavigationBar: _buildBottomNav(context),
+      bottomNavigationBar: const AppBottomNav(selectedIndex: 0),
     );
   }
 
   Widget _buildItemCard(dynamic item) {
-    final lowStock = _isLowStock(item);
+    final lowStk = isLowStock(item);
     final qty = item['quantity'] ?? 0;
     final threshold = item['threshold_quantity'] ?? 1;
 
@@ -1490,11 +1440,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
       onLongPress: () => _deleteItem(item['_id']),
       child: Container(
         decoration: BoxDecoration(
-          color: lowStock ? Colors.white : const Color(0xFFC8E6C9),
+          color: lowStk ? Colors.white : Appcolor.foodCardBg,
           borderRadius: BorderRadius.circular(12),
           border: Border(
             left: BorderSide(
-              color: lowStock ? Colors.orange[400]! : const Color(0xFF388E3C),
+              color: lowStk ? Colors.orange[400]! : Appcolor.foodPrimary,
               width: 3.5,
             ),
           ),
@@ -1607,55 +1557,4 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
-  IconData _getCategoryIcon(String title) {
-    final lower = title.toLowerCase();
-    if (lower.contains('fridge')) return Icons.kitchen;
-    if (lower.contains('freezer')) return Icons.ac_unit;
-    if (lower.contains('pantry')) return Icons.shelves;
-    if (lower.contains('suppli')) return Icons.shopping_bag;
-    if (lower.contains('device')) return Icons.devices;
-    if (lower.contains('clean')) return Icons.cleaning_services;
-    if (lower.contains('bathroom')) return Icons.bathroom;
-    return Icons.category;
-  }
-
-  Widget _buildBottomNav(BuildContext context) {
-    return BottomNavigationBar(
-      type: BottomNavigationBarType.fixed,
-      currentIndex: 2, // Food Hub is at index 2
-      selectedItemColor: Colors.green,
-      unselectedItemColor: Colors.grey,
-      showUnselectedLabels: true,
-      onTap: (index) {
-        switch (index) {
-          case 0:
-            Navigator.pushReplacementNamed(context, '/home');
-            break;
-          case 1:
-            Navigator.pushReplacementNamed(context, '/dashboard');
-            break;
-          case 2:
-            Navigator.pushReplacementNamed(context, '/food-hub');
-            break;
-          case 3:
-            Navigator.pushNamed(context, '/rewards');
-            break;
-          case 4:
-            Navigator.pushReplacementNamed(context, '/settings');
-            break;
-        }
-      },
-      items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
-        BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard_outlined), label: 'Dashboard'),
-        BottomNavigationBarItem(
-            icon: Icon(Icons.restaurant_outlined), label: 'Food Hub'),
-        BottomNavigationBarItem(
-            icon: Icon(Icons.emoji_events_outlined), label: 'Rewards'),
-        BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined), label: 'Settings'),
-      ],
-    );
-  }
 }

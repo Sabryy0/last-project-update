@@ -7,7 +7,7 @@ const RecipeStep = require("../models/recipeStepModel");
 //========================================================================================
 // Create a new recipe with ingredients and steps
 exports.createRecipe = catchAsync(async (req, res, next) => {
-  const { recipe_name, category, serving_size, ingredients, steps } = req.body;
+  const { recipe_name, category, serving_size, ingredients, steps, description, prep_time, cook_time } = req.body;
 
   if (!recipe_name || !category || !serving_size) {
     return next(new AppError("Please provide recipe_name, category, and serving_size", 400));
@@ -19,6 +19,9 @@ exports.createRecipe = catchAsync(async (req, res, next) => {
     recipe_name,
     category,
     serving_size,
+    description: description || '',
+    prep_time: prep_time || 0,
+    cook_time: cook_time || 0,
     family_id: req.familyAccount._id
   });
 
@@ -144,7 +147,7 @@ exports.getRecipeScaled = catchAsync(async (req, res, next) => {
 // Update a recipe
 exports.updateRecipe = catchAsync(async (req, res, next) => {
   const { recipeId } = req.params;
-  const { recipe_name, category, serving_size } = req.body;
+  const { recipe_name, category, serving_size, description, prep_time, cook_time } = req.body;
 
   const recipe = await Recipe.findOne({
     _id: recipeId,
@@ -163,6 +166,9 @@ exports.updateRecipe = catchAsync(async (req, res, next) => {
   if (recipe_name) recipe.recipe_name = recipe_name;
   if (category) recipe.category = category;
   if (serving_size) recipe.serving_size = serving_size;
+  if (description !== undefined) recipe.description = description;
+  if (prep_time !== undefined) recipe.prep_time = prep_time;
+  if (cook_time !== undefined) recipe.cook_time = cook_time;
 
   await recipe.save();
 

@@ -1,7 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../core/services/api_service.dart';
+import '../core/styling/app_color.dart';
+import '../core/utils/food_utils.dart';
 
 class ReceiptsScreen extends StatefulWidget {
   const ReceiptsScreen({super.key});
@@ -15,6 +19,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
 
   List<dynamic> _receipts = [];
   bool _loading = true;
+  final TextEditingController _searchCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -32,18 +37,30 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
       });
     } catch (e) {
       setState(() => _loading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+      if (mounted) showErrorSnack(context, 'Error: $e');
     }
+  }
+
+  List<dynamic> get _filteredReceipts {
+    final q = _searchCtrl.text.toLowerCase().trim();
+    if (q.isEmpty) return _receipts;
+    return _receipts.where((r) {
+      final store = (r['store_name'] ?? '').toString().toLowerCase();
+      final notes = (r['notes'] ?? '').toString().toLowerCase();
+      return store.contains(q) || notes.contains(q);
+    }).toList();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFE8F5E9),
+      backgroundColor: Appcolor.foodBg,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -55,7 +72,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(8, 12, 20, 24),
                   decoration: const BoxDecoration(
-                    color: Color(0xFF388E3C),
+                    color: Appcolor.foodPrimary,
                   ),
                   child: Row(
                     children: [
@@ -81,7 +98,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
                 Expanded(
                   child: _loading
                       ? const Center(
-                          child: CircularProgressIndicator(color: Color(0xFF388E3C)))
+                          child: CircularProgressIndicator(color: Appcolor.foodPrimary))
                       : _receipts.isEmpty
                           ? Center(
                               child: Column(
@@ -102,10 +119,71 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
                             )
                           : RefreshIndicator(
                               onRefresh: _loadData,
-                              child: ListView.builder(
-                                padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
-                                itemCount: _receipts.length,
-                                itemBuilder: (ctx, i) => _buildReceiptCard(_receipts[i]),
+                              child: Column(
+                                children: [
+                                  // Search bar
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: TextField(
+                                        controller: _searchCtrl,
+                                        onChanged: (_) => setState(() {}),
+                                        decoration: InputDecoration(
+                                          hintText: 'Search by store name...',
+                                          hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+                                          prefixIcon: const Icon(Icons.search, color: Appcolor.foodPrimary),
+                                          border: InputBorder.none,
+                                          contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  // Receipt count
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          '${_filteredReceipts.length} receipt${_filteredReceipts.length == 1 ? '' : 's'}',
+                                          style: GoogleFonts.poppins(
+                                              fontSize: 12, color: Colors.grey[600]),
+                                        ),
+                                        const Spacer(),
+                                        if (_receipts.isNotEmpty)
+                                          Text(
+                                            'Total: EGP ${_receipts.fold<double>(0, (sum, r) => sum + ((r['total_amount'] ?? 0) is num ? (r['total_amount'] as num).toDouble() : 0)).toStringAsFixed(2)}',
+                                            style: GoogleFonts.poppins(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: Appcolor.foodPrimary),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  // List
+                                  Expanded(
+                                    child: _filteredReceipts.isEmpty
+                                        ? Center(
+                                            child: Text(
+                                              _searchCtrl.text.isNotEmpty
+                                                  ? 'No receipts match your search'
+                                                  : 'No receipts yet',
+                                              style: GoogleFonts.poppins(
+                                                  fontSize: 14, color: Colors.grey[500]),
+                                            ),
+                                          )
+                                        : ListView.builder(
+                                            padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
+                                            itemCount: _filteredReceipts.length,
+                                            itemBuilder: (ctx, i) =>
+                                                _buildReceiptCard(_filteredReceipts[i]),
+                                          ),
+                                  ),
+                                ],
                               ),
                             ),
                 ),
@@ -116,7 +194,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddEditDialog(),
-        backgroundColor: const Color(0xFF388E3C),
+        backgroundColor: Appcolor.foodPrimary,
         child: const Icon(Icons.add, color: Colors.white, size: 28),
       ),
     );
@@ -128,6 +206,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
     final date = receipt['purchase_date'] ?? receipt['createdAt'] ?? '';
     final id = receipt['_id'] ?? '';
     final items = receipt['items'] as List<dynamic>? ?? [];
+    final photoUrl = receipt['receipt_photo_url'];
     final subtotal = receipt['subtotal'] ?? 0;
     final taxes = receipt['taxes'] ?? 0;
 
@@ -152,7 +231,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
           Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
             decoration: const BoxDecoration(
-              color: Color(0xFFC8E6C9),
+              color: Appcolor.foodCardBg,
               borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(16),
                 topRight: Radius.circular(16),
@@ -169,7 +248,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
                         style: GoogleFonts.poppins(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
-                          color: const Color(0xFF388E3C),
+                          color: Appcolor.foodPrimary,
                         ),
                       ),
                       Text(
@@ -210,6 +289,44 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
             ),
           ),
 
+          // Receipt photo
+          if (photoUrl != null && photoUrl.toString().isNotEmpty)
+            GestureDetector(
+              onTap: () => _showPhotoFullScreen(photoUrl),
+              child: Container(
+                width: double.infinity,
+                height: 180,
+                decoration: BoxDecoration(
+                  image: DecorationImage(
+                    image: photoUrl.toString().startsWith('data:')
+                        ? MemoryImage(base64Decode(photoUrl.toString().split(',').last))
+                        : NetworkImage(photoUrl.toString()) as ImageProvider,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                child: Align(
+                  alignment: Alignment.topRight,
+                  child: Container(
+                    margin: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.photo_camera, size: 14, color: Colors.white),
+                        const SizedBox(width: 4),
+                        Text('Tap to view',
+                            style: GoogleFonts.poppins(fontSize: 10, color: Colors.white)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
           // Line items
           if (items.isNotEmpty)
             Padding(
@@ -238,7 +355,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
                           style: GoogleFonts.poppins(
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
-                              color: const Color(0xFF2E3E33)),
+                              color: Appcolor.textDark),
                         ),
                       ],
                     ),
@@ -259,7 +376,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
                       style: GoogleFonts.poppins(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: const Color(0xFF2E3E33))),
+                          color: Appcolor.textDark)),
                   const SizedBox(height: 6),
                   _summaryRow('Subtotal',
                       'EGP ${(subtotal is num ? subtotal : 0).toStringAsFixed(2)}', false),
@@ -287,13 +404,45 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
               style: GoogleFonts.poppins(
                   fontSize: 13,
                   fontWeight: isBold ? FontWeight.bold : FontWeight.w400,
-                  color: isBold ? const Color(0xFF2E3E33) : Colors.grey[600])),
+                  color: isBold ? Appcolor.textDark : Colors.grey[600])),
           Text(value,
               style: GoogleFonts.poppins(
                   fontSize: 13,
                   fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
-                  color: isBold ? const Color(0xFF2E3E33) : Colors.grey[700])),
+                  color: isBold ? Appcolor.textDark : Colors.grey[700])),
         ],
+      ),
+    );
+  }
+
+  void _showPhotoFullScreen(String photoUrl) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(10),
+        child: Stack(
+          children: [
+            Center(
+              child: InteractiveViewer(
+                child: photoUrl.startsWith('data:')
+                    ? Image.memory(
+                        base64Decode(photoUrl.split(',').last),
+                        fit: BoxFit.contain,
+                      )
+                    : Image.network(photoUrl, fit: BoxFit.contain),
+              ),
+            ),
+            Positioned(
+              top: 10,
+              right: 10,
+              child: IconButton(
+                onPressed: () => Navigator.pop(ctx),
+                icon: const Icon(Icons.close, color: Colors.white, size: 28),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -316,6 +465,9 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
         purchaseDate = DateTime.parse(receipt['purchase_date']);
       } catch (_) {}
     }
+
+    // Photo
+    String? photoBase64 = isEdit ? receipt['receipt_photo_url'] : null;
 
     // Line items
     List<Map<String, dynamic>> lineItems = [];
@@ -349,7 +501,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                       decoration: const BoxDecoration(
-                        color: Color(0xFF388E3C),
+                        color: Appcolor.foodPrimary,
                         borderRadius: BorderRadius.only(
                           topLeft: Radius.circular(20),
                           topRight: Radius.circular(20),
@@ -382,6 +534,105 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
                             _formLabel('Store Name'),
                             _formField(storeCtrl, 'e.g. Oscar, Carrefour'),
                             const SizedBox(height: 14),
+
+                            // Receipt Photo
+                            _formLabel('Receipt Photo (optional)'),
+                            const SizedBox(height: 6),
+                            if (photoBase64 != null && photoBase64!.isNotEmpty)
+                              Stack(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: photoBase64!.startsWith('data:')
+                                        ? Image.memory(
+                                            base64Decode(photoBase64!.split(',').last),
+                                            width: double.infinity,
+                                            height: 150,
+                                            fit: BoxFit.cover,
+                                          )
+                                        : Image.network(
+                                            photoBase64!,
+                                            width: double.infinity,
+                                            height: 150,
+                                            fit: BoxFit.cover,
+                                          ),
+                                  ),
+                                  Positioned(
+                                    top: 6,
+                                    right: 6,
+                                    child: GestureDetector(
+                                      onTap: () => setDialogState(() => photoBase64 = null),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(Icons.close, size: 16, color: Colors.white),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              GestureDetector(
+                                onTap: () async {
+                                  try {
+                                    final picker = ImagePicker();
+                                    final pickedFile = await picker.pickImage(
+                                      source: ImageSource.gallery,
+                                      maxWidth: 1200,
+                                      maxHeight: 1200,
+                                      imageQuality: 70,
+                                    );
+                                    if (pickedFile != null) {
+                                      final bytes = await pickedFile.readAsBytes();
+                                      final base64Str = base64Encode(bytes);
+                                      final mimeType = pickedFile.mimeType ?? 'image/jpeg';
+                                      setDialogState(() {
+                                        photoBase64 = 'data:$mimeType;base64,$base64Str';
+                                      });
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Error picking image: $e')),
+                                      );
+                                    }
+                                  }
+                                },
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 24),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: Colors.grey[300]!,
+                                      style: BorderStyle.solid,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Icon(Icons.add_a_photo_outlined,
+                                          size: 32, color: Colors.grey[400]),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Tap to add receipt photo',
+                                        style: GoogleFonts.poppins(
+                                            fontSize: 12, color: Colors.grey[500]),
+                                      ),
+                                      Text(
+                                        'Take a photo or choose from gallery',
+                                        style: GoogleFonts.poppins(
+                                            fontSize: 10, color: Colors.grey[400]),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(height: 14),
+
                             _formLabel('Purchase Date'),
                             const SizedBox(height: 6),
                             GestureDetector(
@@ -526,7 +777,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
                               width: double.infinity,
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFC8E6C9),
+                                color: Appcolor.foodCardBg,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Row(
@@ -539,7 +790,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
                                       style: GoogleFonts.poppins(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 14,
-                                          color: const Color(0xFF388E3C))),
+                                          color: Appcolor.foodPrimary)),
                                 ],
                               ),
                             ),
@@ -568,6 +819,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
                                     'subtotal': s,
                                     'taxes': t,
                                     'notes': notesCtrl.text.trim(),
+                                    'receipt_photo_url': photoBase64,
                                     'items': lineItems
                                         .where((i) =>
                                             (i['name'] ?? '').toString().isNotEmpty)
@@ -593,7 +845,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
                                   }
                                 },
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF388E3C),
+                                  backgroundColor: Appcolor.foodPrimary,
                                   padding: const EdgeInsets.symmetric(vertical: 14),
                                   shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(10)),
@@ -714,35 +966,17 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
   }
 
   Future<void> _deleteReceipt(String id) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Delete Receipt',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        content: Text('Are you sure you want to delete this receipt?',
-            style: GoogleFonts.poppins()),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+    final confirm = await showConfirmDialog(
+      context,
+      title: 'Delete Receipt',
+      message: 'Are you sure you want to delete this receipt?',
     );
-    if (confirm == true) {
+    if (confirm) {
       try {
         await _apiService.deleteReceipt(id);
         _loadData();
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('Error: $e')));
-        }
+        if (mounted) showErrorSnack(context, 'Error: $e');
       }
     }
   }

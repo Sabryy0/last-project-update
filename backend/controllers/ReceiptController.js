@@ -8,7 +8,7 @@ const InventoryItem = require("../models/inventoryItemModel");
 exports.createReceipt = catchAsync(async (req, res, next) => {
   const { total_amount, purchase_date, store_name, receipt_photo_url, notes, items, subtotal, taxes } = req.body;
 
-  if (!total_amount || !purchase_date) {
+  if (total_amount === undefined || total_amount === null || !purchase_date) {
     return next(new AppError("Please provide total_amount and purchase_date", 400));
   }
 

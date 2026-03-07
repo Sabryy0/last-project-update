@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../core/services/api_service.dart';
+import '../core/styling/app_color.dart';
+import '../core/utils/food_utils.dart';
 
 class InventoryAlertsScreen extends StatefulWidget {
   const InventoryAlertsScreen({super.key});
@@ -16,6 +18,7 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
   List<dynamic> _alerts = [];
   bool _loading = true;
   bool _generating = false;
+  String _filterType = 'all'; // all, low_stock, out_of_stock, expiring_soon, expired
 
   @override
   void initState() {
@@ -46,20 +49,9 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
     try {
       await _apiService.generateInventoryAlerts();
       await _loadAlerts();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Alerts refreshed!'),
-            backgroundColor: Color(0xFF388E3C),
-          ),
-        );
-      }
+      if (mounted) showSuccessSnack(context, 'Alerts refreshed!');
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+      if (mounted) showErrorSnack(context, 'Error: $e');
     }
     setState(() => _generating = false);
   }
@@ -69,11 +61,7 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
       await _apiService.markAllAlertsAsRead();
       _loadAlerts();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+      if (mounted) showErrorSnack(context, 'Error: $e');
     }
   }
 
@@ -82,11 +70,7 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
       await _apiService.markAlertAsRead(id);
       _loadAlerts();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+      if (mounted) showErrorSnack(context, 'Error: $e');
     }
   }
 
@@ -95,11 +79,7 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
       await _apiService.deleteAlert(id);
       _loadAlerts();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+      if (mounted) showErrorSnack(context, 'Error: $e');
     }
   }
 
@@ -131,7 +111,7 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
       case 'expired':
         return Colors.red[800]!;
       default:
-        return const Color(0xFF388E3C);
+        return Appcolor.foodPrimary;
     }
   }
 
@@ -150,19 +130,25 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
     }
   }
 
+  List<dynamic> get _filteredAlerts {
+    if (_filterType == 'all') return _alerts;
+    return _alerts.where((a) => a['alert_type'] == _filterType).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final unread = _alerts.where((a) => a['is_read'] != true).toList();
-    final read = _alerts.where((a) => a['is_read'] == true).toList();
+    final filtered = _filteredAlerts;
+    final unread = filtered.where((a) => a['is_read'] != true).toList();
+    final read = filtered.where((a) => a['is_read'] == true).toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFE8F5E9),
+      backgroundColor: Appcolor.foodBg,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 700),
             child: _loading
-                ? const Center(child: CircularProgressIndicator(color: Color(0xFF388E3C)))
+                ? const Center(child: CircularProgressIndicator(color: Appcolor.foodPrimary))
                 : Column(
                     children: [
                       // Header
@@ -179,7 +165,7 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: const Icon(Icons.arrow_back_ios_new,
-                                    size: 18, color: Color(0xFF388E3C)),
+                                    size: 18, color: Appcolor.foodPrimary),
                               ),
                             ),
                             const SizedBox(width: 14),
@@ -191,7 +177,7 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
                                       style: GoogleFonts.poppins(
                                           fontSize: 24,
                                           fontWeight: FontWeight.bold,
-                                          color: const Color(0xFF2E3E33))),
+                                          color: Appcolor.textDark)),
                                   if (_unreadCount > 0)
                                     Text('$_unreadCount unread',
                                         style: GoogleFonts.poppins(
@@ -205,7 +191,7 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
                                 child: Text('Read All',
                                     style: GoogleFonts.poppins(
                                         fontSize: 12,
-                                        color: const Color(0xFF388E3C),
+                                        color: Appcolor.foodPrimary,
                                         fontWeight: FontWeight.w600)),
                               ),
                           ],
@@ -232,7 +218,7 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
                                   color: Colors.white, fontWeight: FontWeight.w600),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF388E3C),
+                              backgroundColor: Appcolor.foodPrimary,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12)),
@@ -240,11 +226,37 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
                           ),
                         ),
                       ),
+                      const SizedBox(height: 10),
+
+                      // Filter chips
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              _filterChip('all', 'All', Icons.list, _alerts.length),
+                              const SizedBox(width: 8),
+                              _filterChip('low_stock', 'Low Stock', Icons.trending_down,
+                                  _alerts.where((a) => a['alert_type'] == 'low_stock').length),
+                              const SizedBox(width: 8),
+                              _filterChip('out_of_stock', 'Out of Stock', Icons.remove_shopping_cart,
+                                  _alerts.where((a) => a['alert_type'] == 'out_of_stock').length),
+                              const SizedBox(width: 8),
+                              _filterChip('expiring_soon', 'Expiring', Icons.schedule,
+                                  _alerts.where((a) => a['alert_type'] == 'expiring_soon').length),
+                              const SizedBox(width: 8),
+                              _filterChip('expired', 'Expired', Icons.warning,
+                                  _alerts.where((a) => a['alert_type'] == 'expired').length),
+                            ],
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: 14),
 
                       // Alert list
                       Expanded(
-                        child: _alerts.isEmpty
+                        child: filtered.isEmpty
                             ? _buildEmptyState()
                             : RefreshIndicator(
                                 onRefresh: _loadAlerts,
@@ -273,6 +285,35 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
     );
   }
 
+  Widget _filterChip(String type, String label, IconData icon, int count) {
+    final isSelected = _filterType == type;
+    return GestureDetector(
+      onTap: () => setState(() => _filterType = type),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? Appcolor.foodPrimary : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? Appcolor.foodPrimary : Colors.grey[300]!,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: isSelected ? Colors.white : Colors.grey[600]),
+            const SizedBox(width: 6),
+            Text('$label ($count)',
+                style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isSelected ? Colors.white : Colors.grey[700])),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -281,17 +322,19 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: const Color(0xFFE8F5E9),
+              color: Appcolor.foodBg,
               borderRadius: BorderRadius.circular(50),
             ),
-            child: const Icon(Icons.notifications_none, size: 48, color: Color(0xFF388E3C)),
+            child: const Icon(Icons.notifications_none, size: 48, color: Appcolor.foodPrimary),
           ),
           const SizedBox(height: 20),
-          Text('No Alerts',
+          Text(_filterType != 'all' ? 'No ${_alertLabel(_filterType)} alerts' : 'No Alerts',
               style: GoogleFonts.poppins(
-                  fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFF2E3E33))),
+                  fontSize: 18, fontWeight: FontWeight.bold, color: Appcolor.textDark)),
           const SizedBox(height: 8),
-          Text('Tap "Scan Inventory" to check for low stock and expiring items',
+          Text(_filterType != 'all'
+              ? 'Try a different filter or scan inventory'
+              : 'Tap "Scan Inventory" to check for low stock and expiring items',
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[600])),
         ],
@@ -410,7 +453,7 @@ class _InventoryAlertsScreenState extends State<InventoryAlertsScreen> {
                       Text(message,
                           style: GoogleFonts.poppins(
                             fontSize: 13,
-                            color: const Color(0xFF2E3E33),
+                            color: Appcolor.textDark,
                             fontWeight: isRead ? FontWeight.normal : FontWeight.w500,
                           )),
                     ],

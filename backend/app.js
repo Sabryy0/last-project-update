@@ -29,6 +29,7 @@ const mealRouter = require('./routes/mealRoutes');
 const leftoverRouter = require('./routes/leftoverRoutes');
 const mealSuggestionRouter = require('./routes/mealSuggestionRoutes');
 const locationRouter = require('./routes/locationRoutes');
+const groceryRouter = require('./routes/groceryRoutes');
 
 
 const path = require('path');
@@ -44,8 +45,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(morgan('dev'));
 
  
@@ -73,6 +74,7 @@ app.use('/api/meals', mealRouter);
 app.use('/api/leftovers', leftoverRouter);
 app.use('/api/meal-suggestions', mealSuggestionRouter);
 app.use('/api/location', locationRouter);
+app.use('/api/grocery-lists', groceryRouter);
 
 // Global error handler
 app.use((err, req, res, next) => {
