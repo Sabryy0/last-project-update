@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/services/api_service.dart';
+import '../core/widgets/app_bottom_nav.dart';
 
 class SettingPage extends StatefulWidget {
   final VoidCallback? onLogout;
@@ -53,6 +54,7 @@ class _SettingPageState extends State<SettingPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      bottomNavigationBar: const AppBottomNav(selectedIndex: 3),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(

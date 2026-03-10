@@ -138,7 +138,7 @@ class _FoodHubScreenState extends State<FoodHubScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: const AppBottomNav(selectedIndex: 0),
+      bottomNavigationBar: const AppBottomNav(selectedIndex: 2),
     );
   }
 

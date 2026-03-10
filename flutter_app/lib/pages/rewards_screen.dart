@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/services/api_service.dart';
+import '../core/widgets/app_bottom_nav.dart';
 
 class RewardsScreen extends StatefulWidget {
   const RewardsScreen({super.key});
@@ -134,6 +135,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
           ),
         ],
       ),
+      bottomNavigationBar: const AppBottomNav(selectedIndex: 1),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.green))
           : Center(

@@ -986,7 +986,7 @@ class _MealsScreenState extends State<MealsScreen> {
         backgroundColor: const Color(0xFF388E3C),
         child: const Icon(Icons.add, color: Colors.white),
       ),
-      bottomNavigationBar: const AppBottomNav(selectedIndex: 0),
+      bottomNavigationBar: const AppBottomNav(selectedIndex: 2),
     );
   }
 

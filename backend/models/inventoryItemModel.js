@@ -8,7 +8,7 @@ const inventoryItemSchema = new mongoose.Schema({
   },
   item_category: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'ItemCategory',
+    ref: 'InventoryCategory',
     required: [true, 'Please provide the item category']
   },
   item_name: {

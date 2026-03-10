@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/services/api_service.dart';
 import '../core/styling/app_color.dart';
@@ -8,14 +9,12 @@ import '../core/widgets/app_bottom_nav.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
-
   @override
   State<InventoryScreen> createState() => _InventoryScreenState();
 }
 
 class _InventoryScreenState extends State<InventoryScreen> {
   final ApiService _apiService = ApiService();
-
   List<dynamic> _items = [];
   List<dynamic> _categories = [];
   List<dynamic> _inventories = [];
@@ -24,7 +23,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   bool _loading = true;
   String? _selectedCategoryId;
   final TextEditingController _searchCtrl = TextEditingController();
-  String _sortBy = 'name'; // name, quantity, low_stock
+  String _sortBy = 'name';
   int _unreadAlerts = 0;
 
   @override
@@ -38,20 +37,16 @@ class _InventoryScreenState extends State<InventoryScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       _familyTitle = prefs.getString('familyTitle') ?? 'My Family';
-
       final results = await Future.wait([
         _apiService.getAllFamilyItems(),
-        _apiService.getAllItemCategories(),
+        _apiService.getAllInventoryCategories(tree: false),
         _apiService.getAllInventories(),
         _apiService.getAllUnits(),
       ]);
-
-      // Load unread alert count
       int alertCount = 0;
       try {
         alertCount = await _apiService.getUnreadAlertCount();
       } catch (_) {}
-
       setState(() {
         _items = results[0];
         _categories = results[1];
@@ -62,18 +57,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
       });
     } catch (e) {
       setState(() => _loading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading inventory: $e')),
-        );
-      }
+      if (mounted) showErrorSnack(context, 'Error loading inventory: $e');
     }
   }
 
+  // ── Filtering & Sorting ──────────────────────────────────────
+
   List<dynamic> get _filteredItems {
     List<dynamic> result = List.from(_items);
-
-    // Filter by category
     if (_selectedCategoryId != null) {
       result = result.where((item) {
         final cat = item['item_category'];
@@ -81,131 +72,157 @@ class _InventoryScreenState extends State<InventoryScreen> {
         return cat == _selectedCategoryId;
       }).toList();
     }
-
-    // Filter by search
     final q = _searchCtrl.text.toLowerCase().trim();
     if (q.isNotEmpty) {
       result = result.where((item) {
         final name = (item['item_name'] ?? '').toString().toLowerCase();
-        return name.contains(q);
+        final catName = _getCategoryName(item).toLowerCase();
+        return name.contains(q) || catName.contains(q);
       }).toList();
     }
-
-    // Sort
     switch (_sortBy) {
       case 'quantity':
-        result.sort((a, b) => ((a['quantity'] ?? 0) as num).compareTo((b['quantity'] ?? 0) as num));
+        result.sort((a, b) =>
+            ((a['quantity'] ?? 0) as num).compareTo((b['quantity'] ?? 0) as num));
         break;
       case 'low_stock':
         result.sort((a, b) {
-          final aLow = isLowStock(a) ? 0 : 1;
-          final bLow = isLowStock(b) ? 0 : 1;
-          return aLow.compareTo(bLow);
+          final aL = isLowStock(a) ? 0 : 1;
+          return aL.compareTo(isLowStock(b) ? 0 : 1);
         });
         break;
+      case 'category':
+        result.sort(
+            (a, b) => _getCategoryName(a).compareTo(_getCategoryName(b)));
+        break;
       default:
-        result.sort((a, b) => (a['item_name'] ?? '').toString().compareTo((b['item_name'] ?? '').toString()));
+        result.sort((a, b) => (a['item_name'] ?? '')
+            .toString()
+            .compareTo((b['item_name'] ?? '').toString()));
     }
     return result;
   }
 
   String _getCategoryName(dynamic item) {
     final cat = item['item_category'];
-    if (cat is Map) return cat['title'] ?? '';
-    return '';
+    if (cat is Map) return cat['title'] ?? 'Uncategorized';
+    final match = _categories.where((c) => c['_id'] == cat).toList();
+    if (match.isNotEmpty) return match.first['title'] ?? 'Uncategorized';
+    return 'Uncategorized';
   }
 
-  // ==================== UNIT MANAGEMENT DIALOGS ====================
+  Map<String, List<dynamic>> get _groupedItems {
+    final items = _filteredItems;
+    final Map<String, List<dynamic>> groups = {};
+    for (final item in items) {
+      final catName = _getCategoryName(item);
+      groups.putIfAbsent(catName, () => []);
+      groups[catName]!.add(item);
+    }
+    return groups;
+  }
+
+  int _getItemCountForCategory(String catId) {
+    return _items.where((item) {
+      final cat = item['item_category'];
+      if (cat is Map) return cat['_id'] == catId;
+      return cat == catId;
+    }).length;
+  }
+
+  // ── Unit dialogs ─────────────────────────────────────────────
 
   void _showAddUnitDialog(StateSetter setDialogState) {
     final nameCtrl = TextEditingController();
     String selectedType = 'count';
-
     showDialog(
       context: context,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setInnerState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: Text('Add New Unit',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16)),
-              content: Column(
+        return StatefulBuilder(builder: (context, setInnerState) {
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text('Add New Unit',
+                style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold, fontSize: 16)),
+            content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Unit Name', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+                  Text('Unit Name',
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600, fontSize: 13)),
                   const SizedBox(height: 6),
                   TextField(
-                    controller: nameCtrl,
-                    decoration: InputDecoration(
-                      hintText: 'e.g., kg, liter, piece',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    ),
-                  ),
+                      controller: nameCtrl,
+                      decoration: InputDecoration(
+                          hintText: 'e.g., kg, liter, piece',
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10))),
                   const SizedBox(height: 14),
-                  Text('Unit Type', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+                  Text('Unit Type',
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600, fontSize: 13)),
                   const SizedBox(height: 6),
                   Row(
-                    children: ['weight', 'volume', 'count'].map((type) {
-                      final isSelected = selectedType == type;
-                      return Expanded(
+                      children: ['weight', 'volume', 'count'].map((type) {
+                    final isSel = selectedType == type;
+                    return Expanded(
                         child: GestureDetector(
-                          onTap: () => setInnerState(() => selectedType = type),
-                          child: Container(
-                            margin: EdgeInsets.only(right: type != 'count' ? 8 : 0),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            decoration: BoxDecoration(
-                              color: isSelected ? const Color(0xFF388E3C) : Colors.grey[200],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Center(
-                              child: Text(
-                                type[0].toUpperCase() + type.substring(1),
+                      onTap: () =>
+                          setInnerState(() => selectedType = type),
+                      child: Container(
+                        margin: EdgeInsets.only(
+                            right: type != 'count' ? 8 : 0),
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                            color: isSel
+                                ? Appcolor.foodPrimary
+                                : Colors.grey[200],
+                            borderRadius: BorderRadius.circular(8)),
+                        child: Center(
+                            child: Text(
+                                type[0].toUpperCase() +
+                                    type.substring(1),
                                 style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: isSelected ? Colors.white : Colors.black87,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: isSel
+                                        ? Colors.white
+                                        : Colors.black87))),
+                      ),
+                    ));
+                  }).toList()),
+                ]),
+            actions: [
+              TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    if (nameCtrl.text.trim().isEmpty) return;
-                    try {
-                      await _apiService.createUnit(nameCtrl.text.trim(), selectedType);
-                      final updatedUnits = await _apiService.getAllUnits();
-                      setState(() => _units = updatedUnits);
-                      setDialogState(() {});
-                      if (mounted) Navigator.pop(ctx);
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error: $e')),
-                        );
-                      }
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF388E3C)),
-                  child: const Text('Add', style: TextStyle(color: Colors.white)),
-                ),
-              ],
-            );
-          },
-        );
+                  child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () async {
+                  if (nameCtrl.text.trim().isEmpty) return;
+                  try {
+                    await _apiService.createUnit(
+                        nameCtrl.text.trim(), selectedType);
+                    final u = await _apiService.getAllUnits();
+                    setState(() => _units = u);
+                    setDialogState(() {});
+                    if (mounted) Navigator.pop(ctx);
+                  } catch (e) {
+                    if (mounted) showErrorSnack(context, '$e');
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Appcolor.foodPrimary),
+                child:
+                    const Text('Add', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        });
       },
     );
   }
@@ -213,720 +230,590 @@ class _InventoryScreenState extends State<InventoryScreen> {
   void _showEditUnitDialog(dynamic unit, StateSetter setDialogState) {
     final nameCtrl = TextEditingController(text: unit['unit_name'] ?? '');
     String selectedType = unit['unit_type'] ?? 'count';
-
     showDialog(
       context: context,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setInnerState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: Text('Edit Unit',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16)),
-              content: Column(
+        return StatefulBuilder(builder: (context, setInnerState) {
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text('Edit Unit',
+                style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold, fontSize: 16)),
+            content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Unit Name', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+                  Text('Unit Name',
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600, fontSize: 13)),
                   const SizedBox(height: 6),
                   TextField(
-                    controller: nameCtrl,
-                    decoration: InputDecoration(
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    ),
-                  ),
+                      controller: nameCtrl,
+                      decoration: InputDecoration(
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10))),
                   const SizedBox(height: 14),
-                  Text('Unit Type', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+                  Text('Unit Type',
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600, fontSize: 13)),
                   const SizedBox(height: 6),
                   Row(
-                    children: ['weight', 'volume', 'count'].map((type) {
-                      final isSelected = selectedType == type;
-                      return Expanded(
+                      children: ['weight', 'volume', 'count'].map((type) {
+                    final isSel = selectedType == type;
+                    return Expanded(
                         child: GestureDetector(
-                          onTap: () => setInnerState(() => selectedType = type),
-                          child: Container(
-                            margin: EdgeInsets.only(right: type != 'count' ? 8 : 0),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            decoration: BoxDecoration(
-                              color: isSelected ? const Color(0xFF388E3C) : Colors.grey[200],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Center(
-                              child: Text(
-                                type[0].toUpperCase() + type.substring(1),
+                      onTap: () =>
+                          setInnerState(() => selectedType = type),
+                      child: Container(
+                        margin: EdgeInsets.only(
+                            right: type != 'count' ? 8 : 0),
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                            color: isSel
+                                ? Appcolor.foodPrimary
+                                : Colors.grey[200],
+                            borderRadius: BorderRadius.circular(8)),
+                        child: Center(
+                            child: Text(
+                                type[0].toUpperCase() +
+                                    type.substring(1),
                                 style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: isSelected ? Colors.white : Colors.black87,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: isSel
+                                        ? Colors.white
+                                        : Colors.black87))),
+                      ),
+                    ));
+                  }).toList()),
+                ]),
+            actions: [
+              TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    if (nameCtrl.text.trim().isEmpty) return;
-                    try {
-                      await _apiService.updateUnit(
-                        unit['_id'],
+                  child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () async {
+                  if (nameCtrl.text.trim().isEmpty) return;
+                  try {
+                    await _apiService.updateUnit(unit['_id'],
                         unitName: nameCtrl.text.trim(),
-                        unitType: selectedType,
-                      );
-                      final updatedUnits = await _apiService.getAllUnits();
-                      setState(() => _units = updatedUnits);
-                      setDialogState(() {});
-                      if (mounted) Navigator.pop(ctx);
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error: $e')),
-                        );
-                      }
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF388E3C)),
-                  child: const Text('Save', style: TextStyle(color: Colors.white)),
-                ),
-              ],
-            );
-          },
-        );
+                        unitType: selectedType);
+                    final u = await _apiService.getAllUnits();
+                    setState(() => _units = u);
+                    setDialogState(() {});
+                    if (mounted) Navigator.pop(ctx);
+                  } catch (e) {
+                    if (mounted) showErrorSnack(context, '$e');
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Appcolor.foodPrimary),
+                child:
+                    const Text('Save', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        });
       },
     );
   }
 
-  void _showDeleteUnitConfirm(dynamic unit, StateSetter setDialogState, VoidCallback onDeleted) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Delete Unit', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        content: Text(
-          'Are you sure you want to delete "${unit['unit_name']}"?',
-          style: GoogleFonts.poppins(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              try {
-                await _apiService.deleteUnit(unit['_id']);
-                final updatedUnits = await _apiService.getAllUnits();
-                setState(() => _units = updatedUnits);
-                onDeleted();
-                setDialogState(() {});
-                if (mounted) Navigator.pop(ctx);
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: $e')),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
+  // ── Add / Edit Item Dialog ───────────────────────────────────
+
+  DateTime? _tryParseDate(dynamic val) {
+    if (val == null) return null;
+    if (val is DateTime) return val;
+    return DateTime.tryParse(val.toString());
   }
 
-  // ================================================================
-
   void _showAddEditItemDialog({Map<String, dynamic>? existingItem}) {
-    final nameCtrl = TextEditingController(text: existingItem?['item_name'] ?? '');
-    final qtyCtrl = TextEditingController(
-        text: existingItem != null ? '' : ''); // For new items: total qty; for edit: adjustment amount
+    final nameCtrl =
+        TextEditingController(text: existingItem?['item_name'] ?? '');
+    final qtyCtrl = TextEditingController(text: '');
     final minCtrl = TextEditingController(
-        text: existingItem != null ? existingItem['threshold_quantity']?.toString() ?? '1' : '1');
-
-    // For editing: track the current quantity and adjustment
+        text: existingItem != null
+            ? existingItem['threshold_quantity']?.toString() ?? '1'
+            : '1');
     final double currentQty = existingItem != null
-        ? (existingItem['quantity'] is num ? (existingItem['quantity'] as num).toDouble() : 0.0)
+        ? (existingItem['quantity'] is num
+            ? (existingItem['quantity'] as num).toDouble()
+            : 0.0)
         : 0.0;
-    double adjustedQty = currentQty; // the live result shown to user
-    bool isAdding = true; // true = add, false = remove
-
+    double adjustedQty = currentQty;
+    bool isAdding = true;
     String? selectedUnitId;
     String? selectedCategoryId;
     String? selectedInventoryId;
+    DateTime? purchaseDate;
+    DateTime? expiryDate;
 
-    // Parse existing item data
     if (existingItem != null) {
       final unit = existingItem['unit_id'];
       selectedUnitId = unit is Map ? unit['_id'] : unit?.toString();
-
       final cat = existingItem['item_category'];
       selectedCategoryId = cat is Map ? cat['_id'] : cat?.toString();
-
       final inv = existingItem['inventory_id'];
       selectedInventoryId = inv is Map ? inv['_id'] : inv?.toString();
+      purchaseDate = _tryParseDate(existingItem['purchase_date']);
+      expiryDate = _tryParseDate(existingItem['expiry_date']);
     } else {
       if (_inventories.isNotEmpty) {
         selectedInventoryId = _inventories.first['_id'];
       }
+      selectedCategoryId = _selectedCategoryId;
+      purchaseDate = DateTime.now();
     }
 
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return Dialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              child: Container(
-                width: 420,
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.85,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Green header
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF388E3C),
-                        borderRadius: BorderRadius.only(
+        return StatefulBuilder(builder: (context, setDialogState) {
+          return Dialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            child: Container(
+              width: 420,
+              constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.85),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                // ── Header
+                Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  decoration: const BoxDecoration(
+                      color: Appcolor.foodPrimary,
+                      borderRadius: BorderRadius.only(
                           topLeft: Radius.circular(20),
-                          topRight: Radius.circular(20),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            existingItem != null ? 'Edit Item' : 'Add New Item',
+                          topRight: Radius.circular(20))),
+                  child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(existingItem != null ? 'Edit Item' : 'Add New Item',
                             style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          IconButton(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white)),
+                        IconButton(
                             onPressed: () => Navigator.pop(dialogContext),
-                            icon: const Icon(Icons.close, color: Colors.white),
+                            icon:
+                                const Icon(Icons.close, color: Colors.white),
                             padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Body
-                    Flexible(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Item Name
-                            Text('Item Name',
-                                style: GoogleFonts.poppins(
-                                    fontWeight: FontWeight.w600, fontSize: 14)),
-                            const SizedBox(height: 8),
-                            TextField(
+                            constraints: const BoxConstraints()),
+                      ]),
+                ),
+
+                // ── Body
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _fieldLabel('Item Name'),
+                          const SizedBox(height: 8),
+                          TextField(
                               controller: nameCtrl,
-                              decoration: InputDecoration(
-                                hintText: 'Enter item name',
-                                border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10)),
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 12),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
+                              decoration: _inputDeco('Enter item name')),
+                          const SizedBox(height: 16),
 
-                            // Unit selector with management
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('Unit',
+                          // ── Category dropdown (unified)
+                          _fieldLabel('Category'),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey[400]!),
+                                borderRadius: BorderRadius.circular(10)),
+                            child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                              isExpanded: true,
+                              value: selectedCategoryId,
+                              hint: Text('Select category',
+                                  style: GoogleFonts.poppins(
+                                      color: Colors.grey)),
+                              items: _categories
+                                  .map<DropdownMenuItem<String>>((cat) {
+                                final path =
+                                    buildCategoryPath(cat, _categories);
+                                return DropdownMenuItem<String>(
+                                    value: cat['_id'],
+                                    child: Text(path,
+                                        style:
+                                            GoogleFonts.poppins(fontSize: 13),
+                                        overflow: TextOverflow.ellipsis));
+                              }).toList(),
+                              onChanged: (val) => setDialogState(
+                                  () => selectedCategoryId = val),
+                            )),
+                          ),
+                          if (_categories.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: GestureDetector(
+                                onTap: () async {
+                                  Navigator.pop(dialogContext);
+                                  await Navigator.pushNamed(
+                                      context, '/inventory-categories');
+                                  _loadData();
+                                },
+                                child: Text(
+                                    'No categories \u2014 tap to create one',
                                     style: GoogleFonts.poppins(
-                                        fontWeight: FontWeight.w600, fontSize: 14)),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    GestureDetector(
-                                      onTap: () => _showAddUnitDialog(setDialogState),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green[50],
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(color: Colors.green[300]!),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.add, size: 14, color: Colors.green[800]),
-                                            const SizedBox(width: 2),
-                                            Text('Add',
-                                                style: GoogleFonts.poppins(
-                                                    fontSize: 11, color: Colors.green[800],
-                                                    fontWeight: FontWeight.w500)),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            // Selected unit display
-                            if (selectedUnitId != null) ...[
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey[300]!),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        _units.firstWhere((u) => u['_id'] == selectedUnitId, orElse: () => {'unit_name': ''})['unit_name'] ?? '',
-                                        style: GoogleFonts.poppins(fontSize: 14),
-                                      ),
-                                    ),
-                                    GestureDetector(
-                                      onTap: () => setDialogState(() => selectedUnitId = null),
-                                      child: Icon(Icons.close, size: 18, color: Colors.grey[500]),
-                                    ),
-                                  ],
-                                ),
+                                        fontSize: 12,
+                                        color: Appcolor.foodPrimary,
+                                        decoration:
+                                            TextDecoration.underline)),
                               ),
-                              const SizedBox(height: 8),
-                            ],
-                            _units.isEmpty
-                                ? Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[100],
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: Colors.grey[300]!),
-                                    ),
-                                    child: Column(
-                                      children: [
-                                        Icon(Icons.help_outline, color: Colors.grey[400], size: 28),
-                                        const SizedBox(height: 6),
-                                        Text('No units available',
-                                            style: GoogleFonts.poppins(
-                                                fontSize: 13, color: Colors.grey[500])),
-                                        const SizedBox(height: 4),
-                                        Text('Tap "Seed Defaults" for common units or "Add" to create custom ones',
-                                            textAlign: TextAlign.center,
-                                            style: GoogleFonts.poppins(
-                                                fontSize: 11, color: Colors.grey[400])),
-                                      ],
-                                    ),
-                                  )
-                                : Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      // Chip selector
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 8,
-                                        children: _units.map<Widget>((unit) {
-                                          final unitId = unit['_id'];
-                                          final isSelected = selectedUnitId == unitId;
-                                          return GestureDetector(
-                                            onTap: () {
-                                              setDialogState(() {
-                                                selectedUnitId = isSelected ? null : unitId;
-                                              });
-                                            },
-                                            onLongPress: () => _showEditUnitDialog(unit, setDialogState),
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                              decoration: BoxDecoration(
-                                                color: isSelected ? const Color(0xFF388E3C) : Colors.grey[200],
-                                                borderRadius: BorderRadius.circular(20),
-                                              ),
-                                              child: Text(
-                                                unit['unit_name'] ?? '',
-                                                style: GoogleFonts.poppins(
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: isSelected ? Colors.white : Colors.black87,
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        }).toList(),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        'Unit Selector  •  Long press to edit',
-                                        style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[400]),
-                                      ),
-                                    ],
-                                  ),
-                            const SizedBox(height: 16),
+                            ),
+                          const SizedBox(height: 16),
 
-                            // Quantity section
-                            if (existingItem != null) ...[
-                              // ---- EDIT MODE: Current stock + adjustment ----
-                              Container(
+                          // ── Unit selector
+                          Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              children: [
+                                _fieldLabel('Unit'),
+                                GestureDetector(
+                                  onTap: () =>
+                                      _showAddUnitDialog(setDialogState),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                        color: Colors.green[50],
+                                        borderRadius:
+                                            BorderRadius.circular(6),
+                                        border: Border.all(
+                                            color: Colors.green[300]!)),
+                                    child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.add,
+                                              size: 14,
+                                              color: Colors.green[800]),
+                                          const SizedBox(width: 2),
+                                          Text('Add',
+                                              style: GoogleFonts.poppins(
+                                                  fontSize: 11,
+                                                  color: Colors.green[800],
+                                                  fontWeight:
+                                                      FontWeight.w500)),
+                                        ]),
+                                  ),
+                                ),
+                              ]),
+                          const SizedBox(height: 8),
+                          if (_units.isEmpty)
+                            Container(
                                 width: double.infinity,
-                                padding: const EdgeInsets.all(14),
+                                padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
-                                  color: adjustedQty <= (num.tryParse(minCtrl.text) ?? 1)
+                                    color: Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                        color: Colors.grey[300]!)),
+                                child: Text('No units \u2014 tap "Add" above',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 12,
+                                        color: Colors.grey[500])))
+                          else
+                            Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: _units.map<Widget>((unit) {
+                                  final unitId = unit['_id'];
+                                  final isSel = selectedUnitId == unitId;
+                                  return GestureDetector(
+                                    onTap: () => setDialogState(() =>
+                                        selectedUnitId =
+                                            isSel ? null : unitId),
+                                    onLongPress: () => _showEditUnitDialog(
+                                        unit, setDialogState),
+                                    child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 14, vertical: 8),
+                                        decoration: BoxDecoration(
+                                            color: isSel
+                                                ? Appcolor.foodPrimary
+                                                : Colors.grey[200],
+                                            borderRadius:
+                                                BorderRadius.circular(20)),
+                                        child: Text(unit['unit_name'] ?? '',
+                                            style: GoogleFonts.poppins(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                                color: isSel
+                                                    ? Colors.white
+                                                    : Colors.black87))),
+                                  );
+                                }).toList()),
+                          const SizedBox(height: 16),
+
+                          // ── Quantity section (edit vs add)
+                          if (existingItem != null) ...[
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                  color: adjustedQty <=
+                                          (num.tryParse(minCtrl.text) ?? 1)
                                       ? Colors.red[50]
                                       : Colors.green[50],
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
-                                    color: adjustedQty <= (num.tryParse(minCtrl.text) ?? 1)
-                                        ? Colors.red[300]!
-                                        : Colors.green[300]!,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      color: adjustedQty <=
+                                              (num.tryParse(minCtrl.text) ?? 1)
+                                          ? Colors.red[300]!
+                                          : Colors.green[300]!)),
+                              child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text('Current Stock',
-                                            style: GoogleFonts.poppins(
-                                                fontSize: 12, color: Colors.grey[600])),
-                                        Text(
-                                          '${adjustedQty % 1 == 0 ? adjustedQty.toInt() : adjustedQty.toStringAsFixed(1)}',
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 28,
-                                            fontWeight: FontWeight.bold,
-                                            color: adjustedQty <= (num.tryParse(minCtrl.text) ?? 1)
-                                                ? Colors.red[700]
-                                                : const Color(0xFF388E3C),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    if (adjustedQty <= (num.tryParse(minCtrl.text) ?? 1))
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Current Stock',
+                                              style: GoogleFonts.poppins(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[600])),
+                                          Text(_fmtNum(adjustedQty),
+                                              style: GoogleFonts.poppins(
+                                                  fontSize: 28,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: adjustedQty <=
+                                                          (num.tryParse(
+                                                                  minCtrl
+                                                                      .text) ??
+                                                              1)
+                                                      ? Colors.red[700]
+                                                      : Appcolor.foodPrimary)),
+                                        ]),
+                                    if (adjustedQty <=
+                                        (num.tryParse(minCtrl.text) ?? 1))
                                       Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.red[100],
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Text('Low Stock',
-                                            style: GoogleFonts.poppins(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
-                                                color: Colors.red[700])),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-
-                              // Add / Remove toggle
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: GestureDetector(
-                                      onTap: () => setDialogState(() => isAdding = true),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(vertical: 10),
-                                        decoration: BoxDecoration(
-                                          color: isAdding ? const Color(0xFF388E3C) : Colors.grey[200],
-                                          borderRadius: const BorderRadius.only(
-                                            topLeft: Radius.circular(10),
-                                            bottomLeft: Radius.circular(10),
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(Icons.add_circle_outline,
-                                                size: 18,
-                                                color: isAdding ? Colors.white : Colors.black54),
-                                            const SizedBox(width: 6),
-                                            Text('Add',
-                                                style: GoogleFonts.poppins(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 4),
+                                          decoration: BoxDecoration(
+                                              color: Colors.red[100],
+                                              borderRadius:
+                                                  BorderRadius.circular(8)),
+                                          child: Text('Low Stock',
+                                              style: GoogleFonts.poppins(
+                                                  fontSize: 11,
                                                   fontWeight: FontWeight.w600,
-                                                  fontSize: 13,
-                                                  color: isAdding ? Colors.white : Colors.black54,
-                                                )),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: GestureDetector(
-                                      onTap: () => setDialogState(() => isAdding = false),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(vertical: 10),
-                                        decoration: BoxDecoration(
-                                          color: !isAdding ? Colors.red : Colors.grey[200],
-                                          borderRadius: const BorderRadius.only(
-                                            topRight: Radius.circular(10),
-                                            bottomRight: Radius.circular(10),
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(Icons.remove_circle_outline,
-                                                size: 18,
-                                                color: !isAdding ? Colors.white : Colors.black54),
-                                            const SizedBox(width: 6),
-                                            Text('Remove',
-                                                style: GoogleFonts.poppins(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 13,
-                                                  color: !isAdding ? Colors.white : Colors.black54,
-                                                )),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-
-                              // Adjustment amount input
-                              Text(
-                                isAdding ? 'Amount to Add' : 'Amount to Remove',
-                                style: GoogleFonts.poppins(
-                                    fontWeight: FontWeight.w600, fontSize: 14),
-                              ),
-                              const SizedBox(height: 8),
-                              TextField(
+                                                  color: Colors.red[700]))),
+                                  ]),
+                            ),
+                            const SizedBox(height: 14),
+                            Row(children: [
+                              _toggleBtn(
+                                  'Add', Icons.add_circle_outline, isAdding,
+                                  () {
+                                setDialogState(() => isAdding = true);
+                              }, left: true),
+                              _toggleBtn('Remove',
+                                  Icons.remove_circle_outline, !isAdding, () {
+                                setDialogState(() => isAdding = false);
+                              }, left: false),
+                            ]),
+                            const SizedBox(height: 10),
+                            _fieldLabel(
+                                isAdding ? 'Amount to Add' : 'Amount to Remove'),
+                            const SizedBox(height: 8),
+                            TextField(
                                 controller: qtyCtrl,
                                 keyboardType: TextInputType.number,
                                 onChanged: (val) {
                                   final amount = double.tryParse(val) ?? 0;
                                   setDialogState(() {
-                                    if (isAdding) {
-                                      adjustedQty = currentQty + amount;
-                                    } else {
-                                      adjustedQty = currentQty - amount;
-                                      if (adjustedQty < 0) adjustedQty = 0;
-                                    }
+                                    adjustedQty = isAdding
+                                        ? currentQty + amount
+                                        : (currentQty - amount)
+                                            .clamp(0, double.infinity);
                                   });
                                 },
-                                decoration: InputDecoration(
-                                  hintText: '0',
-                                  prefixIcon: Icon(
-                                    isAdding ? Icons.add : Icons.remove,
-                                    color: isAdding ? const Color(0xFF388E3C) : Colors.red,
-                                  ),
-                                  border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(10)),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 12),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              // Result preview
-                              Container(
+                                decoration: _inputDeco('0').copyWith(
+                                    prefixIcon: Icon(
+                                        isAdding
+                                            ? Icons.add
+                                            : Icons.remove,
+                                        color: isAdding
+                                            ? Appcolor.foodPrimary
+                                            : Colors.red))),
+                            const SizedBox(height: 8),
+                            Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 12, vertical: 8),
                                 decoration: BoxDecoration(
-                                  color: Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.info_outline,
-                                        size: 16, color: Colors.grey[500]),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '${currentQty % 1 == 0 ? currentQty.toInt() : currentQty.toStringAsFixed(1)}'
-                                      ' ${isAdding ? "+" : "−"} '
-                                      '${(double.tryParse(qtyCtrl.text) ?? 0) % 1 == 0 ? (double.tryParse(qtyCtrl.text) ?? 0).toInt() : (double.tryParse(qtyCtrl.text) ?? 0).toStringAsFixed(1)}'
-                                      ' = ${adjustedQty % 1 == 0 ? adjustedQty.toInt() : adjustedQty.toStringAsFixed(1)}',
+                                    color: Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(8)),
+                                child: Row(children: [
+                                  Icon(Icons.info_outline,
+                                      size: 16, color: Colors.grey[500]),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                      '${_fmtNum(currentQty)} ${isAdding ? "+" : "\u2212"} ${_fmtNum(double.tryParse(qtyCtrl.text) ?? 0)} = ${_fmtNum(adjustedQty)}',
                                       style: GoogleFonts.poppins(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w500,
-                                          color: Colors.grey[700]),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-
-                              // Minimum row
-                              Text('Minimum',
-                                  style: GoogleFonts.poppins(
-                                      fontWeight: FontWeight.w600, fontSize: 14)),
-                              const SizedBox(height: 8),
-                              TextField(
+                                          color: Colors.grey[700])),
+                                ])),
+                            const SizedBox(height: 14),
+                            _fieldLabel('Minimum Threshold'),
+                            const SizedBox(height: 8),
+                            TextField(
                                 controller: minCtrl,
                                 keyboardType: TextInputType.number,
                                 onChanged: (_) => setDialogState(() {}),
-                                decoration: InputDecoration(
-                                  hintText: '1',
-                                  border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(10)),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 12),
-                                ),
-                              ),
-                            ] else ...[
-                              // ---- NEW ITEM MODE: Simple quantity + minimum ----
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                decoration: _inputDeco('1')),
+                          ] else ...[
+                            Row(children: [
+                              Expanded(
+                                  child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Text('Quantity',
-                                            style: GoogleFonts.poppins(
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 14)),
-                                        const SizedBox(height: 8),
-                                        TextField(
-                                          controller: qtyCtrl,
-                                          keyboardType: TextInputType.number,
-                                          decoration: InputDecoration(
-                                            hintText: '0',
-                                            border: OutlineInputBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(10)),
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                    horizontal: 16, vertical: 12),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                    _fieldLabel('Quantity'),
+                                    const SizedBox(height: 8),
+                                    TextField(
+                                        controller: qtyCtrl,
+                                        keyboardType: TextInputType.number,
+                                        decoration: _inputDeco('0')),
+                                  ])),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                  child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Text('Minimum',
-                                            style: GoogleFonts.poppins(
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 14)),
-                                        const SizedBox(height: 8),
-                                        TextField(
-                                          controller: minCtrl,
-                                          keyboardType: TextInputType.number,
-                                          decoration: InputDecoration(
-                                            hintText: '1',
-                                            border: OutlineInputBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(10)),
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                    horizontal: 16, vertical: 12),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                            const SizedBox(height: 16),
+                                    _fieldLabel('Minimum'),
+                                    const SizedBox(height: 8),
+                                    TextField(
+                                        controller: minCtrl,
+                                        keyboardType: TextInputType.number,
+                                        decoration: _inputDeco('1')),
+                                  ])),
+                            ]),
+                          ],
+                          const SizedBox(height: 16),
 
-                            // Category dropdown
-                            Text('Category',
-                                style: GoogleFonts.poppins(
-                                    fontWeight: FontWeight.w600, fontSize: 14)),
+                          // ── Date pickers
+                          Row(children: [
+                            Expanded(
+                                child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                  _fieldLabel('Purchase Date'),
+                                  const SizedBox(height: 8),
+                                  _dateTile(
+                                    date: purchaseDate,
+                                    hint: 'Select date',
+                                    icon: Icons.shopping_cart_outlined,
+                                    onTap: () async {
+                                      final picked = await showDatePicker(
+                                          context: context,
+                                          initialDate:
+                                              purchaseDate ?? DateTime.now(),
+                                          firstDate: DateTime(2020),
+                                          lastDate: DateTime(2030));
+                                      if (picked != null) {
+                                        setDialogState(
+                                            () => purchaseDate = picked);
+                                      }
+                                    },
+                                    onClear: () => setDialogState(
+                                        () => purchaseDate = null),
+                                  ),
+                                ])),
+                            const SizedBox(width: 12),
+                            Expanded(
+                                child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                  _fieldLabel('Expiry Date'),
+                                  const SizedBox(height: 8),
+                                  _dateTile(
+                                    date: expiryDate,
+                                    hint: 'Optional',
+                                    icon: Icons.event_outlined,
+                                    iconColor: expiryDate != null &&
+                                            expiryDate!.isBefore(DateTime.now())
+                                        ? Colors.red
+                                        : null,
+                                    onTap: () async {
+                                      final picked = await showDatePicker(
+                                          context: context,
+                                          initialDate:
+                                              expiryDate ?? DateTime.now(),
+                                          firstDate: DateTime.now()
+                                              .subtract(
+                                                  const Duration(days: 30)),
+                                          lastDate: DateTime(2030));
+                                      if (picked != null) {
+                                        setDialogState(
+                                            () => expiryDate = picked);
+                                      }
+                                    },
+                                    onClear: () => setDialogState(
+                                        () => expiryDate = null),
+                                  ),
+                                ])),
+                          ]),
+                          const SizedBox(height: 16),
+
+                          // ── Inventory selector (add only)
+                          if (existingItem == null) ...[
+                            _fieldLabel('Inventory'),
                             const SizedBox(height: 8),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
                               decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey[400]!),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
+                                  border:
+                                      Border.all(color: Colors.grey[400]!),
+                                  borderRadius: BorderRadius.circular(10)),
                               child: DropdownButtonHideUnderline(
-                                child: DropdownButton<String>(
-                                  isExpanded: true,
-                                  value: selectedCategoryId,
-                                  hint: Text('Select category',
-                                      style: GoogleFonts.poppins(
-                                          color: Colors.grey)),
-                                  items: _categories.map<DropdownMenuItem<String>>((cat) {
-                                    return DropdownMenuItem<String>(
-                                      value: cat['_id'],
-                                      child: Text(cat['title'] ?? '',
-                                          style: GoogleFonts.poppins()),
-                                    );
-                                  }).toList(),
-                                  onChanged: (val) {
-                                    setDialogState(() => selectedCategoryId = val);
-                                  },
-                                ),
-                              ),
+                                  child: DropdownButton<String>(
+                                isExpanded: true,
+                                value: selectedInventoryId,
+                                hint: Text('Select inventory',
+                                    style: GoogleFonts.poppins(
+                                        color: Colors.grey)),
+                                items: _inventories
+                                    .map<DropdownMenuItem<String>>((inv) =>
+                                        DropdownMenuItem<String>(
+                                            value: inv['_id'],
+                                            child: Text(inv['title'] ?? '',
+                                                style:
+                                                    GoogleFonts.poppins())))
+                                    .toList(),
+                                onChanged: (val) => setDialogState(
+                                    () => selectedInventoryId = val),
+                              )),
                             ),
                             const SizedBox(height: 16),
+                          ],
 
-                            // Inventory dropdown (only for new items)
-                            if (existingItem == null) ...[
-                              Text('Inventory',
-                                  style: GoogleFonts.poppins(
-                                      fontWeight: FontWeight.w600, fontSize: 14)),
-                              const SizedBox(height: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                                decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey[400]!),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: DropdownButtonHideUnderline(
-                                  child: DropdownButton<String>(
-                                    isExpanded: true,
-                                    value: selectedInventoryId,
-                                    hint: Text('Select inventory',
-                                        style: GoogleFonts.poppins(
-                                            color: Colors.grey)),
-                                    items:
-                                        _inventories.map<DropdownMenuItem<String>>((inv) {
-                                      return DropdownMenuItem<String>(
-                                        value: inv['_id'],
-                                        child: Text(inv['title'] ?? '',
-                                            style: GoogleFonts.poppins()),
-                                      );
-                                    }).toList(),
-                                    onChanged: (val) {
-                                      setDialogState(
-                                          () => selectedInventoryId = val);
-                                    },
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                            ],
-
-                            // Save button
-                            SizedBox(
+                          // ── Save button
+                          SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
                                 onPressed: () {
-                                    final finalQty = existingItem != null
-                                        ? adjustedQty.toString()
-                                        : qtyCtrl.text;
-                                    _saveItem(
-                                      dialogContext,
+                                  final finalQty = existingItem != null
+                                      ? adjustedQty.toString()
+                                      : qtyCtrl.text;
+                                  _saveItem(dialogContext,
                                       existingItem: existingItem,
                                       name: nameCtrl.text,
                                       quantity: finalQty,
@@ -934,71 +821,137 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                       unitId: selectedUnitId,
                                       categoryId: selectedCategoryId,
                                       inventoryId: selectedInventoryId,
-                                    );
-                                  },
+                                      purchaseDate: purchaseDate,
+                                      expiryDate: expiryDate);
+                                },
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF388E3C),
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
+                                    backgroundColor: Appcolor.foodPrimary,
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 14),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(10))),
                                 child: Text(
-                                  existingItem != null ? 'Update' : 'Add Item',
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+                                    existingItem != null ? 'Update' : 'Add Item',
+                                    style: GoogleFonts.poppins(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 16)),
+                              )),
+                        ]),
+                  ),
                 ),
-              ),
-            );
-          },
-        );
+              ]),
+            ),
+          );
+        });
       },
     );
   }
 
-  Future<void> _saveItem(
-    BuildContext dialogContext, {
-    Map<String, dynamic>? existingItem,
-    required String name,
-    required String quantity,
-    required String minimum,
-    String? unitId,
-    String? categoryId,
-    String? inventoryId,
-  }) async {
+  // ── Helpers ──────────────────────────────────────────────────
+
+  Widget _fieldLabel(String text) => Text(text,
+      style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 14));
+
+  InputDecoration _inputDeco(String hint) => InputDecoration(
+      hintText: hint,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 12));
+
+  Widget _dateTile(
+      {DateTime? date,
+      required String hint,
+      required IconData icon,
+      Color? iconColor,
+      required VoidCallback onTap,
+      required VoidCallback onClear}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey[400]!),
+            borderRadius: BorderRadius.circular(10)),
+        child: Row(children: [
+          Icon(icon, size: 18, color: iconColor ?? Colors.grey[600]),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Text(
+                  date != null ? DateFormat('MMM dd, yyyy').format(date) : hint,
+                  style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      color: date != null ? Appcolor.textDark : Colors.grey))),
+          if (date != null)
+            GestureDetector(
+                onTap: onClear,
+                child:
+                    Icon(Icons.close, size: 16, color: Colors.grey[400])),
+        ]),
+      ),
+    );
+  }
+
+  Widget _toggleBtn(
+      String label, IconData icon, bool active, VoidCallback onTap,
+      {required bool left}) {
+    return Expanded(
+        child: GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: active
+              ? (left ? Appcolor.foodPrimary : Colors.red)
+              : Colors.grey[200],
+          borderRadius: BorderRadius.only(
+            topLeft: left ? const Radius.circular(10) : Radius.zero,
+            bottomLeft: left ? const Radius.circular(10) : Radius.zero,
+            topRight: !left ? const Radius.circular(10) : Radius.zero,
+            bottomRight: !left ? const Radius.circular(10) : Radius.zero,
+          ),
+        ),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, size: 18, color: active ? Colors.white : Colors.black54),
+          const SizedBox(width: 6),
+          Text(label,
+              style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: active ? Colors.white : Colors.black54)),
+        ]),
+      ),
+    ));
+  }
+
+  String _fmtNum(double n) =>
+      n % 1 == 0 ? n.toInt().toString() : n.toStringAsFixed(1);
+
+  // ── CRUD ─────────────────────────────────────────────────────
+
+  Future<void> _saveItem(BuildContext dialogContext,
+      {Map<String, dynamic>? existingItem,
+      required String name,
+      required String quantity,
+      required String minimum,
+      String? unitId,
+      String? categoryId,
+      String? inventoryId,
+      DateTime? purchaseDate,
+      DateTime? expiryDate}) async {
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter item name')),
-      );
+      showErrorSnack(context, 'Please enter item name');
       return;
     }
-
     if (unitId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a unit')),
-      );
+      showErrorSnack(context, 'Please select a unit');
       return;
     }
-
     if (categoryId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a category')),
-      );
+      showErrorSnack(context, 'Please select a category');
       return;
     }
-
     try {
       final data = {
         'item_name': name,
@@ -1006,97 +959,64 @@ class _InventoryScreenState extends State<InventoryScreen> {
         'threshold_quantity': num.tryParse(minimum) ?? 1,
         'unit_id': unitId,
         'item_category': categoryId,
+        if (purchaseDate != null)
+          'purchase_date': purchaseDate.toIso8601String(),
+        'expiry_date': expiryDate?.toIso8601String(),
       };
-
       if (existingItem != null) {
-        // Update
         await _apiService.updateInventoryItem(existingItem['_id'], data);
       } else {
-        // Create
         if (inventoryId == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please select an inventory')),
-          );
+          showErrorSnack(context, 'Please select an inventory');
           return;
         }
         await _apiService.addInventoryItem(inventoryId, data);
       }
-
       if (mounted) Navigator.pop(dialogContext);
       _loadData();
-    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        showSuccessSnack(
+            context, existingItem != null ? 'Item updated' : 'Item added');
       }
+    } catch (e) {
+      if (mounted) showErrorSnack(context, '$e');
     }
   }
 
-  Future<void> _deleteItem(String itemId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Delete Item', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        content: Text('Are you sure you want to delete this item?',
-            style: GoogleFonts.poppins()),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      try {
-        await _apiService.deleteInventoryItem(itemId);
-        _loadData();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
-          );
-        }
-      }
+  Future<void> _deleteItem(String itemId, String itemName) async {
+    final confirmed = await showConfirmDialog(context,
+        title: 'Delete Item',
+        message: 'Are you sure you want to delete "$itemName"?');
+    if (!confirmed) return;
+    try {
+      await _apiService.deleteInventoryItem(itemId);
+      _loadData();
+      if (mounted) showSuccessSnack(context, '"$itemName" deleted');
+    } catch (e) {
+      if (mounted) showErrorSnack(context, '$e');
     }
   }
 
   void _showCreateInventoryDialog() {
     final titleCtrl = TextEditingController();
-
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text('New Inventory',
             style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleCtrl,
-              decoration: InputDecoration(
+        content: TextField(
+            controller: titleCtrl,
+            decoration: InputDecoration(
                 labelText: 'Inventory Name',
                 hintText: 'e.g., Kitchen Pantry, Fridge',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-            ),
-          ],
-        ),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10)))),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () async {
               if (titleCtrl.text.isNotEmpty) {
@@ -1104,457 +1024,543 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   await _apiService.createInventory(titleCtrl.text);
                   if (mounted) Navigator.pop(ctx);
                   _loadData();
+                  if (mounted) showSuccessSnack(context, 'Inventory created');
                 } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error: $e')),
-                    );
-                  }
+                  if (mounted) showErrorSnack(context, '$e');
                 }
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF388E3C)),
-            child: const Text('Create', style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Appcolor.foodPrimary),
+            child:
+                const Text('Create', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  BUILD
+  // ═══════════════════════════════════════════════════════════════
+
   @override
   Widget build(BuildContext context) {
-    final items = _filteredItems;
-
     return Scaffold(
-      backgroundColor: const Color(0xFFE8F5E9),
+      backgroundColor: Appcolor.foodBg,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 700),
             child: _loading
-            ? const Center(child: CircularProgressIndicator(color: Color(0xFF388E3C)))
-            : RefreshIndicator(
-                onRefresh: _loadData,
-                child: SingleChildScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header row
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '$_familyTitle Family',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              Text(
-                                'Inventory Management',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                  color: const Color(0xFF2E3E33),
-                                ),
-                              ),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              IconButton(
-                                onPressed: _showCreateInventoryDialog,
-                                icon: const Icon(Icons.add_box_outlined,
-                                    color: Color(0xFF388E3C)),
-                                tooltip: 'New Inventory',
-                              ),
-                              Stack(
-                                children: [
-                                  IconButton(
-                                    onPressed: () => Navigator.pushNamed(context, '/inventory-alerts'),
-                                    icon: const Icon(Icons.notifications_outlined,
-                                        color: Color(0xFF388E3C)),
-                                  ),
-                                  if (_unreadAlerts > 0)
-                                    Positioned(
-                                      right: 6,
-                                      top: 6,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: const BoxDecoration(
-                                          color: Colors.red,
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: Text(
-                                          _unreadAlerts > 9 ? '9+' : '$_unreadAlerts',
-                                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Search bar
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: TextField(
-                          controller: _searchCtrl,
-                          onChanged: (_) => setState(() {}),
-                          decoration: InputDecoration(
-                            hintText: 'Search items...',
-                            hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
-                            prefixIcon: const Icon(Icons.search, color: Color(0xFF388E3C)),
-                            suffixIcon: PopupMenuButton<String>(
-                              icon: Icon(Icons.sort, color: Colors.grey[600]),
-                              tooltip: 'Sort by',
-                              onSelected: (val) => setState(() => _sortBy = val),
-                              itemBuilder: (_) => [
-                                PopupMenuItem(value: 'name',
-                                  child: Row(children: [
-                                    Icon(Icons.sort_by_alpha, size: 18, color: _sortBy == 'name' ? const Color(0xFF388E3C) : Colors.grey),
-                                    const SizedBox(width: 8),
-                                    Text('Name', style: TextStyle(fontWeight: _sortBy == 'name' ? FontWeight.bold : FontWeight.normal)),
-                                  ]),
-                                ),
-                                PopupMenuItem(value: 'quantity',
-                                  child: Row(children: [
-                                    Icon(Icons.numbers, size: 18, color: _sortBy == 'quantity' ? const Color(0xFF388E3C) : Colors.grey),
-                                    const SizedBox(width: 8),
-                                    Text('Quantity', style: TextStyle(fontWeight: _sortBy == 'quantity' ? FontWeight.bold : FontWeight.normal)),
-                                  ]),
-                                ),
-                                PopupMenuItem(value: 'low_stock',
-                                  child: Row(children: [
-                                    Icon(Icons.warning_amber, size: 18, color: _sortBy == 'low_stock' ? const Color(0xFF388E3C) : Colors.grey),
-                                    const SizedBox(width: 8),
-                                    Text('Low Stock First', style: TextStyle(fontWeight: _sortBy == 'low_stock' ? FontWeight.bold : FontWeight.normal)),
-                                  ]),
-                                ),
-                              ],
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Add New Item button
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: OutlinedButton.icon(
-                          onPressed: () => _showAddEditItemDialog(),
-                          icon: const Icon(Icons.add, color: Color(0xFF388E3C), size: 18),
-                          label: Text(
-                            'Add New Item',
-                            style: GoogleFonts.poppins(
-                              color: const Color(0xFF388E3C),
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Color(0xFF388E3C)),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Items grid
-                      if (items.isEmpty)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(40),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Column(
-                            children: [
-                              Icon(Icons.inventory_2_outlined,
-                                  size: 64, color: Colors.grey[300]),
-                              const SizedBox(height: 12),
-                              Text(
-                                'No items yet',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.grey[500],
-                                  fontSize: 16,
-                                ),
-                              ),
-                              Text(
-                                'Tap "Add New Item" to get started',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.grey[400],
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      else
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            // Responsive: more columns on wider screens
-                            final width = constraints.maxWidth;
-                            final crossAxisCount = width > 900
-                                ? 4
-                                : width > 600
-                                    ? 3
-                                    : 2;
-                            return GridView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              gridDelegate:
-                                  SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: crossAxisCount,
-                                mainAxisSpacing: 10,
-                                crossAxisSpacing: 10,
-                                childAspectRatio: 2.2,
-                              ),
-                              itemCount: items.length,
-                              itemBuilder: (context, index) {
-                                final item = items[index];
-                                return _buildItemCard(item);
-                              },
-                            );
-                          },
-                        ),
-
-                      const SizedBox(height: 28),
-
-                      // Categories Section
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Categories',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF2E3E33),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () async {
-                              await Navigator.pushNamed(context, '/inventory-categories');
-                              _loadData();
-                            },
-                            child: Text(
-                              'View All',
-                              style: GoogleFonts.poppins(
-                                color: const Color(0xFF388E3C),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Category chips
-                      SizedBox(
-                        height: 90,
-                        child: _categories.isEmpty
-                            ? Center(
-                                child: Text(
-                                  'No categories yet',
-                                  style: GoogleFonts.poppins(color: Colors.grey),
-                                ),
-                              )
-                            : ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _categories.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(width: 12),
-                                itemBuilder: (context, index) {
-                                  final cat = _categories[index];
-                                  final catId = cat['_id'];
-                                  final isSelected =
-                                      _selectedCategoryId == catId;
-                                  // Count items in this category
-                                  final count = _items.where((item) {
-                                    final c = item['item_category'];
-                                    if (c is Map) return c['_id'] == catId;
-                                    return c == catId;
-                                  }).length;
-
-                                  return _buildCategoryChip(
-                                    cat['title'] ?? '',
-                                    count,
-                                    getCategoryIcon(cat['title'] ?? ''),
-                                    isSelected,
-                                    () {
-                                      setState(() {
-                                        _selectedCategoryId =
-                                            isSelected ? null : catId;
-                                      });
-                                    },
-                                  );
-                                },
-                              ),
-                      ),
-
-                      const SizedBox(height: 100), // Space for bottom nav
-                    ],
-                  ),
-                ),
-              ),
-      ),
-      ),
-      ),
-      bottomNavigationBar: const AppBottomNav(selectedIndex: 0),
-    );
-  }
-
-  Widget _buildItemCard(dynamic item) {
-    final lowStk = isLowStock(item);
-    final qty = item['quantity'] ?? 0;
-    final threshold = item['threshold_quantity'] ?? 1;
-
-    return GestureDetector(
-      onTap: () => _showAddEditItemDialog(existingItem: Map<String, dynamic>.from(item)),
-      onLongPress: () => _deleteItem(item['_id']),
-      child: Container(
-        decoration: BoxDecoration(
-          color: lowStk ? Colors.white : Appcolor.foodCardBg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border(
-            left: BorderSide(
-              color: lowStk ? Colors.orange[400]! : Appcolor.foodPrimary,
-              width: 3.5,
-            ),
+                ? const Center(
+                    child: CircularProgressIndicator(
+                        color: Appcolor.foodPrimary))
+                : Column(children: [
+                    _buildHeader(),
+                    _buildSearchBar(),
+                    const SizedBox(height: 8),
+                    _buildCategoryFilter(),
+                    const SizedBox(height: 4),
+                    _buildSummaryRow(),
+                    const SizedBox(height: 4),
+                    Expanded(child: _buildItemList()),
+                  ]),
           ),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    item['item_name'] ?? '',
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: const Color(0xFF2E3E33),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Text(
-                  '$qty',
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showAddEditItemDialog(),
+        backgroundColor: Appcolor.foodPrimary,
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: Text('Add Item',
+            style: GoogleFonts.poppins(
+                color: Colors.white, fontWeight: FontWeight.w600)),
+      ),
+      bottomNavigationBar: const AppBottomNav(selectedIndex: 2),
+    );
+  }
+
+  // ── Header ──────────────────────────────────────────────────
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(children: [
+        IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back_ios, color: Appcolor.textDark)),
+        Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Text('Inventory',
                   style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: const Color(0xFF2E3E33),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'minimum',
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Appcolor.textDark)),
+              Text('$_familyTitle Family',
                   style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                Text(
-                  '$threshold',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+                      fontSize: 12, color: Appcolor.textLight)),
+            ])),
+        IconButton(
+            onPressed: _showCreateInventoryDialog,
+            icon: const Icon(Icons.add_box_outlined,
+                color: Appcolor.foodPrimary),
+            tooltip: 'New Inventory'),
+        Stack(children: [
+          IconButton(
+              onPressed: () =>
+                  Navigator.pushNamed(context, '/inventory-alerts'),
+              icon: const Icon(Icons.notifications_outlined,
+                  color: Appcolor.foodPrimary)),
+          if (_unreadAlerts > 0)
+            Positioned(
+                right: 6,
+                top: 6,
+                child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                        color: Colors.red, shape: BoxShape.circle),
+                    child: Text(
+                        _unreadAlerts > 9 ? '9+' : '$_unreadAlerts',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold)))),
+        ]),
+        IconButton(
+            onPressed: () async {
+              await Navigator.pushNamed(context, '/inventory-categories');
+              _loadData();
+            },
+            icon: const Icon(Icons.account_tree_outlined,
+                color: Appcolor.foodPrimary),
+            tooltip: 'Manage Categories'),
+      ]),
+    );
+  }
+
+  // ── Search bar ────────────────────────────────────────────────
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2))
+            ]),
+        child: TextField(
+            controller: _searchCtrl,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'Search items...',
+              hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+              prefixIcon:
+                  const Icon(Icons.search, color: Appcolor.foodPrimary),
+              suffixIcon: PopupMenuButton<String>(
+                icon: Icon(Icons.sort, color: Colors.grey[600]),
+                tooltip: 'Sort by',
+                onSelected: (val) => setState(() => _sortBy = val),
+                itemBuilder: (_) => [
+                  _sortMenuItem('name', 'Name', Icons.sort_by_alpha),
+                  _sortMenuItem('quantity', 'Quantity', Icons.numbers),
+                  _sortMenuItem(
+                      'low_stock', 'Low Stock First', Icons.warning_amber),
+                  _sortMenuItem(
+                      'category', 'Category', Icons.category_outlined),
+                ],
+              ),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 14),
+            )),
       ),
     );
   }
 
-  Widget _buildCategoryChip(
-    String title,
-    int count,
-    IconData icon,
-    bool isSelected,
-    VoidCallback onTap,
-  ) {
+  PopupMenuItem<String> _sortMenuItem(
+      String value, String label, IconData icon) {
+    return PopupMenuItem(
+        value: value,
+        child: Row(children: [
+          Icon(icon,
+              size: 18,
+              color:
+                  _sortBy == value ? Appcolor.foodPrimary : Colors.grey),
+          const SizedBox(width: 8),
+          Text(label,
+              style: TextStyle(
+                  fontWeight:
+                      _sortBy == value ? FontWeight.bold : FontWeight.normal)),
+        ]));
+  }
+
+  // ── Category filter chips ─────────────────────────────────────
+
+  Widget _buildCategoryFilter() {
+    if (_categories.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        itemCount: _categories.length + 1,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            final isSel = _selectedCategoryId == null;
+            return _filterChip('All', _items.length, isSel, () {
+              setState(() => _selectedCategoryId = null);
+            });
+          }
+          final cat = _categories[index - 1];
+          final catId = cat['_id'];
+          final isSel = _selectedCategoryId == catId;
+          return _filterChip(
+              cat['title'] ?? '', _getItemCountForCategory(catId), isSel, () {
+            setState(() => _selectedCategoryId = isSel ? null : catId);
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _filterChip(
+      String label, int count, bool isSelected, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 90,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF388E3C) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
+            color: isSelected ? Appcolor.foodPrimary : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+                color: isSelected
+                    ? Appcolor.foodPrimary
+                    : Colors.grey[300]!)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(label,
+              style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? Colors.white : Appcolor.textDark)),
+          const SizedBox(width: 6),
+          Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.white.withOpacity(0.25)
+                      : Colors.grey[200],
+                  borderRadius: BorderRadius.circular(10)),
+              child: Text('$count',
+                  style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: isSelected
+                          ? Colors.white
+                          : Appcolor.textMedium))),
+        ]),
+      ),
+    );
+  }
+
+  // ── Summary Row ───────────────────────────────────────────────
+
+  Widget _buildSummaryRow() {
+    final total = _items.length;
+    final lowStock = _items.where((i) => isLowStock(i)).length;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+      child: Row(children: [
+        _statBadge(Icons.inventory_2_outlined, '$total items'),
+        const SizedBox(width: 12),
+        if (lowStock > 0)
+          _statBadge(Icons.warning_amber_rounded, '$lowStock low stock',
+              color: Appcolor.warning),
+        const Spacer(),
+        Text('${_categories.length} categories',
+            style: GoogleFonts.poppins(
+                fontSize: 11, color: Appcolor.textLight)),
+      ]),
+    );
+  }
+
+  Widget _statBadge(IconData icon, String label, {Color? color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.circular(20)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 14, color: color ?? Appcolor.foodPrimary),
+        const SizedBox(width: 4),
+        Text(label,
+            style: GoogleFonts.poppins(
+                fontSize: 11,
+                color: color ?? Appcolor.textMedium,
+                fontWeight:
+                    color != null ? FontWeight.w600 : FontWeight.normal)),
+      ]),
+    );
+  }
+
+  // ── Item list (grouped by category) ──────────────────────────
+
+  Widget _buildItemList() {
+    final items = _filteredItems;
+    if (items.isEmpty) {
+      return Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey[300]),
+        const SizedBox(height: 12),
+        Text(
+            _searchCtrl.text.isNotEmpty ? 'No matching items' : 'No items yet',
+            style:
+                GoogleFonts.poppins(color: Colors.grey[500], fontSize: 16)),
+        if (_searchCtrl.text.isEmpty)
+          Text('Tap + to add your first item',
+              style:
+                  GoogleFonts.poppins(color: Colors.grey[400], fontSize: 13)),
+      ]));
+    }
+
+    // If filtering by specific category or using non-default sort, show flat list
+    if (_selectedCategoryId != null || _sortBy != 'name') {
+      return RefreshIndicator(
+          onRefresh: _loadData,
+          color: Appcolor.foodPrimary,
+          child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 90),
+              itemCount: items.length,
+              itemBuilder: (_, i) => _buildItemTile(items[i])));
+    }
+
+    // Default: group by category
+    final grouped = _groupedItems;
+    final categoryNames = grouped.keys.toList()..sort();
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      color: Appcolor.foodPrimary,
+      child: ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 90),
+          itemCount: categoryNames.length,
+          itemBuilder: (_, i) {
+            final catName = categoryNames[i];
+            return _buildCategorySection(catName, grouped[catName]!);
+          }),
+    );
+  }
+
+  Widget _buildCategorySection(String categoryName, List<dynamic> items) {
+    final icon = getCategoryIcon(categoryName);
+    final colorIndex = categoryName.hashCode.abs();
+    final color =
+        Appcolor.categoryColors[colorIndex % Appcolor.categoryColors.length];
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(
+        margin: const EdgeInsets.only(bottom: 8, top: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border(left: BorderSide(color: color, width: 4))),
+        child: Row(children: [
+          Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                  color: color.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8)),
+              child: Icon(icon, size: 18, color: color)),
+          const SizedBox(width: 10),
+          Expanded(
+              child: Text(categoryName,
+                  style: GoogleFonts.poppins(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Appcolor.textDark))),
+          Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                  color: color.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12)),
+              child: Text(
+                  '${items.length} item${items.length == 1 ? "" : "s"}',
+                  style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: color))),
+        ]),
+      ),
+      ...items.map((item) => _buildItemTile(item)),
+      const SizedBox(height: 4),
+    ]);
+  }
+
+  // ── Individual item tile ──────────────────────────────────────
+
+  String _expiryLabel(DateTime expiry) {
+    final now = DateTime.now();
+    final diff = expiry.difference(now).inDays;
+    if (diff < 0) return 'Expired ${-diff}d ago';
+    if (diff == 0) return 'Expires today';
+    if (diff <= 3) return 'Expires in ${diff}d';
+    if (diff <= 7) return 'Expires in ${diff}d';
+    return DateFormat('MMM dd').format(expiry);
+  }
+
+  Color _expiryColor(DateTime expiry) {
+    final diff = expiry.difference(DateTime.now()).inDays;
+    if (diff < 0) return Colors.red[700]!;
+    if (diff <= 3) return Colors.orange[700]!;
+    if (diff <= 7) return Colors.amber[700]!;
+    return Appcolor.textLight;
+  }
+
+  Widget _buildItemTile(dynamic item) {
+    final lowStk = isLowStock(item);
+    final qty = item['quantity'] ?? 0;
+    final threshold = item['threshold_quantity'] ?? 1;
+    final unitName = getUnitName(item);
+    final catName = _getCategoryName(item);
+    final itemName = item['item_name'] ?? '';
+    String inventoryName = '';
+    final inv = item['inventory_id'];
+    if (inv is Map) inventoryName = inv['title'] ?? '';
+    final expiryDate = _tryParseDate(item['expiry_date']);
+    final purchaseDate = _tryParseDate(item['purchase_date']);
+    final bool isExpired =
+        expiryDate != null && expiryDate.isBefore(DateTime.now());
+    final bool expiringSoon = expiryDate != null &&
+        !isExpired &&
+        expiryDate.difference(DateTime.now()).inDays <= 3;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+          color: isExpired
+              ? Colors.red[50]
+              : expiringSoon
+                  ? Colors.orange[50]
+                  : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border(
+              left: BorderSide(
+                  color: isExpired
+                      ? Colors.red
+                      : lowStk
+                          ? Appcolor.warning
+                          : Appcolor.foodPrimary,
+                  width: 3.5)),
           boxShadow: [
             BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon,
-                color: isSelected ? Colors.white : const Color(0xFF388E3C),
-                size: 28),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: GoogleFonts.poppins(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: isSelected ? Colors.white : const Color(0xFF2E3E33),
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            Text(
-              '$count items',
-              style: GoogleFonts.poppins(
-                fontSize: 9,
-                color: isSelected ? Colors.white70 : Colors.grey[500],
-              ),
-            ),
-          ],
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 4,
+                offset: const Offset(0, 1))
+          ]),
+      child: InkWell(
+        onTap: () => _showAddEditItemDialog(
+            existingItem: Map<String, dynamic>.from(item)),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(children: [
+            Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(itemName,
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          color: Appcolor.textDark),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 4),
+                  Wrap(spacing: 6, runSpacing: 4, children: [
+                    if (_selectedCategoryId == null)
+                      _infoBadge(catName,
+                          color: Appcolor.foodPrimary,
+                          bgColor: Appcolor.foodBg),
+                    if (inventoryName.isNotEmpty)
+                      _infoBadge(inventoryName,
+                          color: Appcolor.textLight,
+                          bgColor: Colors.grey[100]!),
+                    if (purchaseDate != null)
+                      _infoBadge(
+                          'Bought ${DateFormat('MMM dd').format(purchaseDate)}',
+                          color: Colors.blue[700]!,
+                          bgColor: Colors.blue[50]!,
+                          icon: Icons.shopping_cart_outlined),
+                    if (expiryDate != null)
+                      _infoBadge(_expiryLabel(expiryDate),
+                          color: _expiryColor(expiryDate),
+                          bgColor: isExpired
+                              ? Colors.red[100]!
+                              : expiringSoon
+                                  ? Colors.orange[100]!
+                                  : Colors.grey[100]!,
+                          icon: isExpired
+                              ? Icons.error_outline
+                              : Icons.event_outlined),
+                  ]),
+                ])),
+            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                Text('$qty',
+                    style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: lowStk
+                            ? Appcolor.warning
+                            : Appcolor.textDark)),
+                if (unitName.isNotEmpty)
+                  Padding(
+                      padding: const EdgeInsets.only(left: 3),
+                      child: Text(unitName,
+                          style: GoogleFonts.poppins(
+                              fontSize: 11,
+                              color: Appcolor.textLight))),
+              ]),
+              Text('min: $threshold',
+                  style: GoogleFonts.poppins(
+                      fontSize: 10, color: Appcolor.textLight)),
+            ]),
+            const SizedBox(width: 4),
+            IconButton(
+                onPressed: () => _deleteItem(item['_id'], itemName),
+                icon: Icon(Icons.delete_outline,
+                    size: 20, color: Colors.grey[400]),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                tooltip: 'Delete'),
+          ]),
         ),
       ),
     );
   }
 
+  Widget _infoBadge(String text,
+      {required Color color,
+      required Color bgColor,
+      IconData? icon}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration:
+          BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(6)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (icon != null) ...[Icon(icon, size: 10, color: color), const SizedBox(width: 3)],
+        Text(text,
+            style: GoogleFonts.poppins(
+                fontSize: 10, color: color, fontWeight: FontWeight.w500)),
+      ]),
+    );
+  }
 }

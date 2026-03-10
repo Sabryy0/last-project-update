@@ -2,13 +2,12 @@ import 'package:flutter/material.dart';
 
 /// Shared bottom navigation bar used across all main screens.
 ///
-/// Pass the current [selectedIndex] (0‑4) to highlight the active tab.
+/// Pass the current [selectedIndex] (0‑3) to highlight the active tab.
 /// The navigation targets are:
 ///   0 → /home
-///   1 → /dashboard
-///   2 → Schedule (coming soon)
-///   3 → Chat (coming soon)
-///   4 → /settings
+///   1 → /rewards
+///   2 → /food-hub
+///   3 → /settings
 class AppBottomNav extends StatelessWidget {
   final int selectedIndex;
   const AppBottomNav({super.key, this.selectedIndex = 0});
@@ -26,11 +25,9 @@ class AppBottomNav extends StatelessWidget {
         BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined), label: 'Home'),
         BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard_outlined), label: 'Dashboard'),
+            icon: Icon(Icons.emoji_events_outlined), label: 'Rewards'),
         BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today_outlined), label: 'Schedule'),
-        BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline), label: 'Chat'),
+            icon: Icon(Icons.restaurant_outlined), label: 'Food Hub'),
         BottomNavigationBarItem(
             icon: Icon(Icons.settings_outlined), label: 'Settings'),
       ],
@@ -44,19 +41,12 @@ class AppBottomNav extends StatelessWidget {
         Navigator.pushReplacementNamed(context, '/home');
         break;
       case 1:
-        Navigator.pushReplacementNamed(context, '/dashboard');
+        Navigator.pushReplacementNamed(context, '/rewards');
         break;
       case 2:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Schedule — Coming soon!')),
-        );
+        Navigator.pushReplacementNamed(context, '/food-hub');
         break;
       case 3:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Chat — Coming soon!')),
-        );
-        break;
-      case 4:
         Navigator.pushReplacementNamed(context, '/settings');
         break;
     }

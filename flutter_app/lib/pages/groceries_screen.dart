@@ -186,7 +186,7 @@ class _GroceriesScreenState extends State<GroceriesScreen> {
             style: GoogleFonts.poppins(
                 color: Colors.white, fontWeight: FontWeight.w600)),
       ),
-      bottomNavigationBar: const AppBottomNav(selectedIndex: 0),
+      bottomNavigationBar: const AppBottomNav(selectedIndex: 2),
     );
   }
 

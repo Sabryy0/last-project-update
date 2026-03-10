@@ -1353,10 +1353,9 @@ class _HomePageState extends State<HomePage> {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _buildNavItem(Icons.home, 'Home', 0),
-              _buildNavItem(Icons.dashboard, 'Dashboard', 1),
-              _buildNavItem(Icons.calendar_today, 'Schedule', 2),
-              _buildNavItem(Icons.chat_bubble_outline, 'Chat', 3),
-              _buildNavItem(Icons.settings, 'Settings', 4),
+              _buildNavItem(Icons.emoji_events, 'Rewards', 1),
+              _buildNavItem(Icons.restaurant, 'Food Hub', 2),
+              _buildNavItem(Icons.settings, 'Settings', 3),
             ],
           ),
         ),
@@ -1373,19 +1372,12 @@ class _HomePageState extends State<HomePage> {
             setState(() => _activeTab = index);
             break;
           case 1:
-            Navigator.pushNamed(context, '/dashboard');
+            Navigator.pushNamed(context, '/rewards');
             break;
           case 2:
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Schedule - Coming soon!')),
-            );
+            Navigator.pushNamed(context, '/food-hub');
             break;
           case 3:
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Chat - Coming soon!')),
-            );
-            break;
-          case 4:
             Navigator.push(
               context,
               MaterialPageRoute(

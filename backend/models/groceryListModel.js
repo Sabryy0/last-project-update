@@ -30,9 +30,8 @@ const groceryListSchema = new mongoose.Schema({
   },
 });
 
-groceryListSchema.pre('save', function (next) {
+groceryListSchema.pre('save', function () {
   this.updated_at = Date.now();
-  next();
 });
 
 const GroceryList = mongoose.model('grocery_list', groceryListSchema);

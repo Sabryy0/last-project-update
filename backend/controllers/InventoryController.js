@@ -3,6 +3,7 @@ const { catchAsync } = require("../utils/catchAsync");
 const Inventory = require("../models/inventoryModel");
 const InventoryItem = require("../models/inventoryItemModel");
 const ItemCategory = require("../models/itemCategoryModel");
+const InventoryCategory = require("../models/inventoryCategoryModel");
 
 //========================================================================================
 // INVENTORY MANAGEMENT
@@ -222,14 +223,11 @@ exports.addItem = catchAsync(async (req, res, next) => {
     return next(new AppError("Inventory not found", 404));
   }
 
-  // Verify category belongs to family
-  const category = await ItemCategory.findOne({
-    _id: item_category,
-    family_id: req.familyAccount._id
-  });
+  // Verify category exists in unified InventoryCategory collection
+  const category = await InventoryCategory.findById(item_category);
 
   if (!category) {
-    return next(new AppError("Item category not found or doesn't belong to your family", 404));
+    return next(new AppError("Item category not found", 404));
   }
 
   // Validate expiry_date >= purchase_date

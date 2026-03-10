@@ -349,7 +349,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: _buildBottomNav(context, 1),
+      bottomNavigationBar: _buildBottomNav(context, 0),
     );
   }
 
@@ -451,28 +451,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Navigator.pushReplacementNamed(context, '/home');
             break;
           case 1:
-            // Already on dashboard
+            Navigator.pushReplacementNamed(context, '/rewards');
             break;
           case 2:
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Schedule - Coming soon!')),
-            );
+            Navigator.pushReplacementNamed(context, '/food-hub');
             break;
           case 3:
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Chat - Coming soon!')),
-            );
-            break;
-          case 4:
             Navigator.pushReplacementNamed(context, '/settings');
             break;
         }
       },
       items: const [
         BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
-        BottomNavigationBarItem(icon: Icon(Icons.dashboard_outlined), label: 'Dashboard'),
-        BottomNavigationBarItem(icon: Icon(Icons.calendar_today_outlined), label: 'Schedule'),
-        BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: 'Chat'),
+        BottomNavigationBarItem(icon: Icon(Icons.emoji_events_outlined), label: 'Rewards'),
+        BottomNavigationBarItem(icon: Icon(Icons.restaurant_outlined), label: 'Food Hub'),
         BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: 'Settings'),
       ],
     );
