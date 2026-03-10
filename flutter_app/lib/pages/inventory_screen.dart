@@ -1452,10 +1452,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
             return GestureDetector(
               onTap: () => setState(
                   () => _selectedInventoryId = isSel ? null : invId),
-              onLongPress: () => _showInventoryOptions(inv),
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.only(
+                    left: 14, top: 6, bottom: 6, right: 4),
                 decoration: BoxDecoration(
                     color: isSel
                         ? Appcolor.foodPrimary
@@ -1507,6 +1506,19 @@ class _InventoryScreenState extends State<InventoryScreen> {
                               color: isSel
                                   ? Colors.white
                                   : Appcolor.textMedium))),
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      iconSize: 18,
+                      onPressed: () => _showInventoryOptions(inv),
+                      icon: Icon(Icons.more_vert,
+                          color: isSel
+                              ? Colors.white70
+                              : Colors.grey[500]),
+                    ),
+                  ),
                 ]),
               ),
             );
