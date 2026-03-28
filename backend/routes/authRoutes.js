@@ -1,11 +1,12 @@
 const express = require("express");
 
 
-const { signUp, login, forgotPassword, resetPassword, protect, restrictTo, setPassword } = require("../controllers/AuthController");
+const { signUp, login, forgotPassword, resetPassword, protect, restrictTo, setPassword, getFamiliesByMail } = require("../controllers/AuthController");
 
 const authRouter = express.Router();
 authRouter.post("/signup", signUp);
 authRouter.post("/login", login);
+authRouter.get("/families", getFamiliesByMail);
 
 // Protected routes - for all logged-in users
 authRouter.use(protect);

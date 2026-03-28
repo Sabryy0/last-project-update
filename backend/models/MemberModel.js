@@ -11,7 +11,6 @@ const memberSchema = new mongoose.Schema({
   mail:{
     type: String,
     required: [true, 'Please provide your email'],
-    unique: true,
     validate: [validator.isEmail, 'Please provide a valid email']
   },
   password: {
@@ -52,6 +51,9 @@ memberSchema.methods.correctPassword = async function (candidatePassword) {
 
 // Create compound index: username must be unique per family
 memberSchema.index({ username: 1, family_id: 1 }, { unique: true });
+
+// Create compound index: member email must be unique per family
+memberSchema.index({ mail: 1, family_id: 1 }, { unique: true });
 
 const Member = mongoose.model('Member', memberSchema);
 

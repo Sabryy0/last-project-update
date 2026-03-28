@@ -7,7 +7,7 @@ const MemberType = require("../models/MemberTypeModel");
 //========================================================================================
 // Get my point history
 exports.getMyPointHistory = catchAsync(async (req, res, next) => {
-  const history = await PointDetails.find({ member_mail: req.member.mail })
+  const history = await PointDetails.find({ member_mail: req.member.mail, family_id: req.familyAccount._id })
     .populate('task_id', 'title')
     .sort({ createdAt: -1 });
   
@@ -33,7 +33,7 @@ exports.getMemberPointHistory = catchAsync(async (req, res, next) => {
     return next(new AppError("Member not found in your family", 404));
   }
   
-  const history = await PointDetails.find({ member_mail: memberMail })
+  const history = await PointDetails.find({ member_mail: memberMail, family_id: req.familyAccount._id })
     .populate('task_id', 'title')
     .populate('redeem_id')
     .sort({ createdAt: -1 });
@@ -52,7 +52,7 @@ exports.getAllPointHistory = catchAsync(async (req, res, next) => {
   const members = await Member.find({ family_id: req.familyAccount._id });
   const memberMails = members.map(m => m.mail);
   
-  const history = await PointDetails.find({ member_mail: { $in: memberMails } })
+  const history = await PointDetails.find({ member_mail: { $in: memberMails }, family_id: req.familyAccount._id })
     .populate('task_id', 'title')
     .populate('redeem_id')
     .sort({ createdAt: -1 });

@@ -3,6 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/services/api_service.dart';
 import '../core/models/member_model.dart';
 import 'setting.dart';
+import 'signup_login.dart';
+import 'manage_accounts_page.dart';
 
 class HomePage extends StatefulWidget {
   final String? userName;
@@ -29,12 +31,16 @@ class _HomePageState extends State<HomePage> {
   List<Member> _familyMembers = [];
   String _familyTitle = '';
   String _userName = '';
+  List<Map<String, dynamic>> _savedProfiles = [];
+  String _activeProfileKey = '';
+  bool _hasActiveProfile = false;
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _loadSavedProfiles();
     _fetchFamilyMembers();
   }
 
@@ -42,11 +48,218 @@ class _HomePageState extends State<HomePage> {
     final prefs = await SharedPreferences.getInstance();
     final userName = prefs.getString('username') ?? widget.userName ?? '';
     final familyTitle = prefs.getString('familyTitle') ?? widget.familyTitle ?? '';
+    final activeProfileKey = prefs.getString('activeProfileKey') ?? '';
     
     setState(() {
       _userName = userName;
       _familyTitle = familyTitle;
+      _activeProfileKey = activeProfileKey;
+      _hasActiveProfile = activeProfileKey.isNotEmpty;
     });
+  }
+
+  Future<void> _loadSavedProfiles() async {
+    final profiles = await _apiService.getSavedProfiles();
+    if (!mounted) return;
+    setState(() {
+      _savedProfiles = profiles;
+    });
+  }
+
+  Future<void> _switchProfileFromHome(String profileKey) async {
+    try {
+      await _apiService.switchProfile(profileKey);
+      await _loadUserData();
+      await _loadSavedProfiles();
+      await _fetchFamilyMembers();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Switched account')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to switch account: ${e.toString().replaceAll('Exception: ', '')}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showAccountSwitcherSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Accounts',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+                if (_savedProfiles.isNotEmpty)
+                  Builder(builder: (_) {
+                    Map<String, dynamic>? active;
+                    for (final p in _savedProfiles) {
+                      if (p['profileKey']?.toString() == _activeProfileKey) {
+                        active = p;
+                        break;
+                      }
+                    }
+
+                    if (active == null) return const SizedBox.shrink();
+
+                    final activeFamily = active['familyTitle']?.toString() ?? 'Family';
+                    final activeUser = active['username']?.toString() ?? 'Member';
+                    final activeMail = active['mail']?.toString() ?? '';
+                    final initial = (activeUser.isNotEmpty ? activeUser[0] : 'A').toUpperCase();
+
+                    return Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3FAF2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFBFE5C2)),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: const Color(0xFFE8F5E9),
+                            child: Text(
+                              initial,
+                              style: const TextStyle(
+                                color: Color(0xFF2E7D32),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Current account',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF2E7D32),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  '$activeFamily ($activeUser)',
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                Text(activeMail, style: const TextStyle(fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                if (_savedProfiles.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text('No saved accounts yet'),
+                  ),
+                if (_savedProfiles.isNotEmpty)
+                  ..._savedProfiles.map((profile) {
+                    final key = profile['profileKey']?.toString() ?? '';
+                    final familyTitle = profile['familyTitle']?.toString() ?? 'Family';
+                    final username = profile['username']?.toString() ?? 'Member';
+                    final mail = profile['mail']?.toString() ?? '';
+                    final isActive = key == _activeProfileKey;
+
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CircleAvatar(
+                        backgroundColor: const Color(0xFFE8F5E9),
+                        child: Text(
+                          (username.isNotEmpty ? username[0] : 'A').toUpperCase(),
+                          style: const TextStyle(
+                            color: Color(0xFF2E7D32),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      title: Text('$familyTitle ($username)'),
+                      subtitle: Text(mail),
+                      trailing: isActive
+                          ? const Icon(Icons.check_circle, color: Color(0xFF4CAF50))
+                          : null,
+                      onTap: () async {
+                        Navigator.of(sheetContext).pop();
+                        if (!isActive) {
+                          await _switchProfileFromHome(key);
+                        }
+                      },
+                    );
+                  }),
+                const SizedBox(height: 6),
+                SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(sheetContext).pop();
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const LoginPage()),
+                          );
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add New Account'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF2E7D32),
+                          side: const BorderSide(color: Color(0xFF4CAF50)),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: () async {
+                          Navigator.of(sheetContext).pop();
+                          final changed = await Navigator.of(context).push<bool>(
+                            MaterialPageRoute(builder: (_) => const ManageAccountsPage()),
+                          );
+                          if (changed == true) {
+                            await _loadUserData();
+                            await _loadSavedProfiles();
+                            await _fetchFamilyMembers();
+                          }
+                        },
+                        icon: const Icon(Icons.manage_accounts),
+                        label: const Text('Manage Accounts'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _fetchFamilyMembers() async {
@@ -70,9 +283,17 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _handleLogout() async {
     await _apiService.logout();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
     
+    if (widget.onLogout != null) {
+      widget.onLogout!();
+    } else if (mounted) {
+      Navigator.of(context).pushReplacementNamed('/login');
+    }
+  }
+
+  Future<void> _handleLogoutAll() async {
+    await _apiService.logoutAllProfiles();
+
     if (widget.onLogout != null) {
       widget.onLogout!();
     } else if (mounted) {
@@ -492,15 +713,19 @@ class _HomePageState extends State<HomePage> {
         Expanded(
           child: Row(
             children: [
-              Container(
-                width: 70,
-                height: 70,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFF4CAF50), width: 3),
-                  color: Colors.white,
+              GestureDetector(
+                onLongPress: _showAccountSwitcherSheet,
+                onTap: _showAccountSwitcherSheet,
+                child: Container(
+                  width: 70,
+                  height: 70,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFF4CAF50), width: 3),
+                    color: Colors.white,
+                  ),
+                  child: const Icon(Icons.family_restroom, color: Color(0xFF4CAF50), size: 35),
                 ),
-                child: const Icon(Icons.family_restroom, color: Color(0xFF4CAF50), size: 35),
               ),
               const SizedBox(width: 15),
               Expanded(
@@ -523,6 +748,26 @@ class _HomePageState extends State<HomePage> {
                         color: Color(0xFF666666),
                       ),
                     ),
+                    if (_hasActiveProfile) const SizedBox(height: 6),
+                    if (_hasActiveProfile)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4CAF50).withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFF4CAF50).withOpacity(0.35),
+                          ),
+                        ),
+                        child: const Text(
+                          'Active profile',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF2E7D32),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -530,7 +775,37 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         OutlinedButton.icon(
-          onPressed: _handleLogout,
+          onPressed: () async {
+            final selected = await showDialog<String>(
+              context: context,
+              builder: (dialogContext) {
+                return AlertDialog(
+                  title: const Text('Logout options'),
+                  content: const Text('Choose logout scope for this device.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop('cancel'),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop('current'),
+                      child: const Text('Logout current'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop('all'),
+                      child: const Text('Logout all', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                );
+              },
+            );
+
+            if (selected == 'current') {
+              await _handleLogout();
+            } else if (selected == 'all') {
+              await _handleLogoutAll();
+            }
+          },
           icon: const Icon(Icons.logout, size: 20),
           label: const Text('Logout'),
           style: OutlinedButton.styleFrom(

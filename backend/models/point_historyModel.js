@@ -10,6 +10,11 @@ const pointDetailsSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Please provide the member email']
   },
+  family_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'FamilyAccount',
+    required: [true, 'Please provide a family account ID']
+  },
   points_amount: {
     type: Number,
     required: [true, 'Please provide the points amount']
@@ -43,7 +48,7 @@ const pointDetailsSchema = new mongoose.Schema({
 
 // Indexes for faster queries
 pointDetailsSchema.index({ wallet_id: 1, createdAt: -1 });
-pointDetailsSchema.index({ member_mail: 1, createdAt: -1 });
+pointDetailsSchema.index({ member_mail: 1, family_id: 1, createdAt: -1 });
 pointDetailsSchema.index({ granted_by: 1 });
 
 const PointDetails = mongoose.model('PointDetails', pointDetailsSchema);

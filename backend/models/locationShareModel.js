@@ -4,7 +4,6 @@ const locationShareSchema = new mongoose.Schema({
   member_mail: {
     type: String,
     required: [true, 'Please provide the member email'],
-    unique: true,
     ref: 'Member'
   },
   family_id: {
@@ -35,7 +34,7 @@ const locationShareSchema = new mongoose.Schema({
 });
 
 // Indexes
-locationShareSchema.index({ member_mail: 1 });
+locationShareSchema.index({ member_mail: 1, family_id: 1 }, { unique: true });
 locationShareSchema.index({ family_id: 1 });
 
 const LocationShare = mongoose.model('LocationShare', locationShareSchema);

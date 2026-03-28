@@ -3,6 +3,7 @@ import '../core/styling/responsive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/services/api_service.dart';
 import 'home.dart';
+import 'manage_accounts_page.dart';
 
 // ================= LOGIN PAGE =================
 class LoginPage extends StatefulWidget {
@@ -15,29 +16,259 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final ApiService _apiService = ApiService();
   final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _obscurePassword = true;
   bool _isLoading = false;
+  List<Map<String, dynamic>> _savedProfiles = [];
+  String _activeProfileKey = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedProfiles();
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
-    _passwordController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
-    // Validation
+  Future<void> _loadSavedProfiles() async {
+    final profiles = await _apiService.getSavedProfiles();
+    final activeKey = await _apiService.getActiveProfileKey() ?? '';
+    if (!mounted) return;
+    setState(() {
+      _savedProfiles = profiles;
+      _activeProfileKey = activeKey;
+    });
+  }
+
+  Future<void> _quickSwitchProfile(String profileKey) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await _apiService.switchProfile(profileKey);
+      if (!mounted) return;
+      _navigateToHomeAfterQuickSwitch();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to switch profile: ${e.toString().replaceAll('Exception: ', '')}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _navigateToHomeAfterQuickSwitch() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (context) => const HomePage(),
+      ),
+      (route) => false,
+    );
+  }
+
+  Future<void> _removeSavedProfile(String profileKey) async {
+    try {
+      await _apiService.removeSavedProfile(profileKey);
+      await _loadSavedProfiles();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Saved profile removed')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to remove profile: ${e.toString().replaceAll('Exception: ', '')}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showAccountSwitcherSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Switch Account',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+                if (_savedProfiles.isNotEmpty)
+                  Builder(builder: (_) {
+                    Map<String, dynamic>? active;
+                    for (final p in _savedProfiles) {
+                      if (p['profileKey']?.toString() == _activeProfileKey) {
+                        active = p;
+                        break;
+                      }
+                    }
+
+                    if (active == null) return const SizedBox.shrink();
+
+                    final activeFamily = active['familyTitle']?.toString() ?? 'Family';
+                    final activeUser = active['username']?.toString() ?? 'Member';
+                    final activeMail = active['mail']?.toString() ?? '';
+                    final initial = (activeUser.isNotEmpty ? activeUser[0] : 'A').toUpperCase();
+
+                    return Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3FAF2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFBFE5C2)),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: const Color(0xFFE8F5E9),
+                            child: Text(
+                              initial,
+                              style: const TextStyle(
+                                color: Color(0xFF2E7D32),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Current account',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF2E7D32),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  '$activeFamily ($activeUser)',
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                Text(activeMail, style: const TextStyle(fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                if (_savedProfiles.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text('No saved accounts yet'),
+                  ),
+                if (_savedProfiles.isNotEmpty)
+                  ..._savedProfiles.map((profile) {
+                    final profileKey = profile['profileKey']?.toString() ?? '';
+                    final familyTitle = profile['familyTitle']?.toString() ?? 'Family';
+                    final username = profile['username']?.toString() ?? 'Member';
+                    final mail = profile['mail']?.toString() ?? '';
+
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CircleAvatar(
+                        backgroundColor: const Color(0xFFE8F5E9),
+                        child: Text(
+                          (username.isNotEmpty ? username[0] : 'A').toUpperCase(),
+                          style: const TextStyle(
+                            color: Color(0xFF2E7D32),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      title: Text('$familyTitle ($username)'),
+                      subtitle: Text(mail),
+                      onTap: _isLoading
+                          ? null
+                          : () async {
+                              Navigator.of(sheetContext).pop();
+                              await _quickSwitchProfile(profileKey);
+                            },
+                    );
+                  }),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(sheetContext).pop();
+                          setState(() {
+                            _emailController.clear();
+                          });
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add New Account'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF2E7D32),
+                          side: const BorderSide(color: Color(0xFF4CAF50)),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: () async {
+                          Navigator.of(sheetContext).pop();
+                          final changed = await Navigator.of(context).push<bool>(
+                            MaterialPageRoute(builder: (_) => const ManageAccountsPage()),
+                          );
+                          if (changed == true) {
+                            await _loadSavedProfiles();
+                          }
+                        },
+                        icon: const Icon(Icons.manage_accounts),
+                        label: const Text('Manage Accounts'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _handleEmailSubmit() async {
     if (_emailController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter your email')),
-      );
-      return;
-    }
-    
-    if (_passwordController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter your password')),
       );
       return;
     }
@@ -47,52 +278,29 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      print('🔐 Attempting login with email: ${_emailController.text.trim()}');
-      
-      // Login with exact React API call structure
-      final response = await _apiService.login({
-        'mail': _emailController.text.trim(),
-        'password': _passwordController.text,
-      });
+      final mail = _emailController.text.trim();
 
-      print('✅ Login response: $response');
+      final families = await _apiService.getFamiliesByEmail(mail);
+      if (!mounted) return;
 
-      // Save token and user data exactly like React
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('username', response['data']['username'] ?? '');
-      await prefs.setString('familyTitle', response['data']['familyTitle'] ?? '');
-      
-      print('💾 Saved username: ${response['data']['username']}');
-      print('💾 Saved familyTitle: ${response['data']['familyTitle']}');
-      
-      // Check if this is first login (needs password setup)
-      final isFirstLogin = response['data']['isFirstLogin'] ?? false;
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Welcome ${response['data']['username']}!')),
-        );
-        
-        if (isFirstLogin) {
-          // Show password setup dialog
-          _showSetPasswordDialog(
-            username: response['data']['username'],
-            familyTitle: response['data']['familyTitle'],
-          );
-        } else {
-          // Navigate to home page
-          _navigateToHome(
-            response['data']['username'],
-            response['data']['familyTitle'],
-          );
-        }
+      if (families.isEmpty) {
+        throw Exception('No family found for this email');
       }
+
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => FamilyPasswordLoginPage(
+            email: mail,
+            families: families,
+          ),
+        ),
+      );
     } catch (e) {
-      print('❌ Login error: $e');
+      print('❌ Email step error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Login failed: ${e.toString().replaceAll('Exception: ', '')}'),
+            content: Text('Could not continue: ${e.toString().replaceAll('Exception: ', '')}'),
             duration: const Duration(seconds: 5),
           ),
         );
@@ -106,262 +314,56 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  void _navigateToHome(String? username, String? familyTitle) {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (context) => HomePage(
-          userName: username,
-          familyTitle: familyTitle,
-          onLogout: () {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => const LoginPage()),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  void _showSetPasswordDialog({String? username, String? familyTitle}) {
-    final newPasswordController = TextEditingController();
-    final confirmPasswordController = TextEditingController();
-    bool isLoading = false;
-    bool obscureNew = true;
-    bool obscureConfirm = true;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false, // User must set password
-      builder: (BuildContext dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return Dialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Container(
-                width: 400,
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Lock Icon
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4CAF50).withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.lock_outline,
-                        size: 40,
-                        color: Color(0xFF4CAF50),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    
-                    // Title
-                    const Text(
-                      'Set Your Password',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    
-                    // Description
-                    Text(
-                      'Welcome ${username ?? ''}! Please set your personal password to secure your account.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    
-                    // New Password Field
-                    TextField(
-                      controller: newPasswordController,
-                      obscureText: obscureNew,
-                      decoration: InputDecoration(
-                        labelText: 'New Password',
-                        hintText: 'Enter new password',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: IconButton(
-                          icon: Icon(obscureNew ? Icons.visibility_off : Icons.visibility),
-                          onPressed: () {
-                            setDialogState(() {
-                              obscureNew = !obscureNew;
-                            });
-                          },
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    // Confirm Password Field
-                    TextField(
-                      controller: confirmPasswordController,
-                      obscureText: obscureConfirm,
-                      decoration: InputDecoration(
-                        labelText: 'Confirm Password',
-                        hintText: 'Confirm new password',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: IconButton(
-                          icon: Icon(obscureConfirm ? Icons.visibility_off : Icons.visibility),
-                          onPressed: () {
-                            setDialogState(() {
-                              obscureConfirm = !obscureConfirm;
-                            });
-                          },
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    
-                    // Password hint
-                    Row(
-                      children: [
-                        Icon(Icons.info_outline, size: 14, color: Colors.grey[500]),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Password must be at least 6 characters',
-                          style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    
-                    // Set Password Button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: isLoading
-                            ? null
-                            : () async {
-                                // Validation
-                                if (newPasswordController.text.isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Please enter a password')),
-                                  );
-                                  return;
-                                }
-                                
-                                if (newPasswordController.text.length < 6) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Password must be at least 6 characters')),
-                                  );
-                                  return;
-                                }
-                                
-                                if (newPasswordController.text != confirmPasswordController.text) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Passwords do not match')),
-                                  );
-                                  return;
-                                }
-                                
-                                setDialogState(() {
-                                  isLoading = true;
-                                });
-                                
-                                try {
-                                  await _apiService.setPassword(
-                                    newPassword: newPasswordController.text,
-                                    confirmPassword: confirmPasswordController.text,
-                                  );
-                                  
-                                  if (mounted) {
-                                    Navigator.pop(dialogContext);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Password set successfully!'),
-                                        backgroundColor: Colors.green,
-                                      ),
-                                    );
-                                    
-                                    // Navigate to home
-                                    _navigateToHome(username, familyTitle);
-                                  }
-                                } catch (e) {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Failed: ${e.toString().replaceAll('Exception: ', '')}'),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
-                                  }
-                                } finally {
-                                  if (mounted) {
-                                    setDialogState(() {
-                                      isLoading = false;
-                                    });
-                                  }
-                                }
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF4CAF50),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                        child: isLoading
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text(
-                                'Set Password',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFD4E5D4),
+      backgroundColor: const Color(0xFFE7F0E5),
       body: Center(
         child: SingleChildScrollView(
           child: ContentContainer(
             maxWidth: 420,
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.72),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 30,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
                 // Security Icon
-                Image.asset(
-                  'assets/security_icon.png',
-                  width: 100,
-                  height: 100,
+                GestureDetector(
+                  onLongPress: _showAccountSwitcherSheet,
+                  onTap: _showAccountSwitcherSheet,
+                  child: Container(
+                    width: 92,
+                    height: 92,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDDEEDB),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFF8FCF92), width: 1.4),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Image.asset(
+                        'assets/security_icon.png',
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Long press icon to switch accounts',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF6A7E69)),
                 ),
                 const SizedBox(height: 32),
                 
@@ -374,6 +376,64 @@ class _LoginPageState extends State<LoginPage> {
                     color: Colors.black87,
                   ),
                 ),
+                if (_savedProfiles.isNotEmpty) const SizedBox(height: 16),
+                if (_savedProfiles.isNotEmpty)
+                  SizedBox(
+                    height: 44,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _savedProfiles.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (context, index) {
+                        final profile = _savedProfiles[index];
+                        final profileKey = profile['profileKey']?.toString() ?? '';
+                        final familyTitle = profile['familyTitle']?.toString() ?? 'Family';
+                        final username = profile['username']?.toString() ?? 'Member';
+
+                        return InputChip(
+                          label: Text(
+                            '$familyTitle ($username)',
+                            style: const TextStyle(
+                              color: Color(0xFF2E7D32),
+                              fontSize: 12,
+                            ),
+                          ),
+                          backgroundColor: Colors.white,
+                          side: const BorderSide(color: Color(0xFF4CAF50)),
+                          onPressed: _isLoading
+                              ? null
+                              : () => _quickSwitchProfile(profileKey),
+                          onDeleted: _isLoading
+                              ? null
+                              : () async {
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (dialogContext) {
+                                      return AlertDialog(
+                                        title: const Text('Remove saved profile?'),
+                                        content: Text('Remove $familyTitle ($username) from this device?'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.of(dialogContext).pop(false),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () => Navigator.of(dialogContext).pop(true),
+                                            child: const Text('Remove', style: TextStyle(color: Colors.red)),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  );
+
+                                  if (confirmed == true) {
+                                    await _removeSavedProfile(profileKey);
+                                  }
+                                },
+                        );
+                      },
+                    ),
+                  ),
                 const SizedBox(height: 32),
                 
                 // Email TextField
@@ -398,67 +458,14 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                
-                // Password TextField
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: TextField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
-                    decoration: InputDecoration(
-                      hintText: 'Password',
-                      hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
-                      border: const OutlineInputBorder(
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 16,
-                      ),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_off
-                              : Icons.visibility,
-                          color: Colors.grey,
-                          size: 22,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                
-                // Forgot Password
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(
-                    onPressed: () {},
-                    child: const Text(
-                      'Forgot Password',
-                      style: TextStyle(
-                        color: Color(0xFF5E9B5E),
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 24),
                 
                 // Login Button
                 SizedBox(
                   width: double.infinity,
                   height: 48,
                   child: ElevatedButton(
-                    onPressed: _isLoading ? null : _handleLogin,
+                    onPressed: _isLoading ? null : _handleEmailSubmit,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF4CAF50),
                       shape: RoundedRectangleBorder(
@@ -476,7 +483,7 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           )
                         : const Text(
-                            'Log In',
+                          'Continue',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w500,
@@ -618,6 +625,489 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 20),
               ],
+            ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class FamilyPasswordLoginPage extends StatefulWidget {
+  final String email;
+  final List<dynamic> families;
+
+  const FamilyPasswordLoginPage({
+    super.key,
+    required this.email,
+    required this.families,
+  });
+
+  @override
+  State<FamilyPasswordLoginPage> createState() => _FamilyPasswordLoginPageState();
+}
+
+class _FamilyPasswordLoginPageState extends State<FamilyPasswordLoginPage> {
+  final ApiService _apiService = ApiService();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _obscurePassword = true;
+  bool _isLoading = false;
+  String? _selectedFamilyId;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.families.length == 1) {
+      _selectedFamilyId = widget.families.first['family_id']?.toString();
+    }
+  }
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleLogin() async {
+    if (_selectedFamilyId == null || _selectedFamilyId!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please choose your family')),
+      );
+      return;
+    }
+
+    if (_passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter your password')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final response = await _apiService.login({
+        'mail': widget.email,
+        'password': _passwordController.text,
+        'family_id': _selectedFamilyId,
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('username', response['data']['username'] ?? '');
+      await prefs.setString('familyTitle', response['data']['familyTitle'] ?? '');
+
+      final isFirstLogin = response['data']['isFirstLogin'] ?? false;
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Welcome ${response['data']['username']}!')),
+      );
+
+      if (isFirstLogin) {
+        _showSetPasswordDialog(
+          username: response['data']['username'],
+          familyTitle: response['data']['familyTitle'],
+        );
+      } else {
+        _navigateToHome(
+          response['data']['username'],
+          response['data']['familyTitle'],
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Login failed: ${e.toString().replaceAll('Exception: ', '')}'),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _navigateToHome(String? username, String? familyTitle) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (context) => HomePage(
+          userName: username,
+          familyTitle: familyTitle,
+          onLogout: () {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (context) => const LoginPage()),
+            );
+          },
+        ),
+      ),
+      (route) => false,
+    );
+  }
+
+  void _showSetPasswordDialog({String? username, String? familyTitle}) {
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    bool isLoading = false;
+    bool obscureNew = true;
+    bool obscureConfirm = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Container(
+                width: 400,
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4CAF50).withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.lock_outline,
+                        size: 40,
+                        color: Color(0xFF4CAF50),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Set Your Password',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Welcome ${username ?? ''}! Please set your personal password to secure your account.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    TextField(
+                      controller: newPasswordController,
+                      obscureText: obscureNew,
+                      decoration: InputDecoration(
+                        labelText: 'New Password',
+                        hintText: 'Enter new password',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          icon: Icon(obscureNew ? Icons.visibility_off : Icons.visibility),
+                          onPressed: () {
+                            setDialogState(() {
+                              obscureNew = !obscureNew;
+                            });
+                          },
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: confirmPasswordController,
+                      obscureText: obscureConfirm,
+                      decoration: InputDecoration(
+                        labelText: 'Confirm Password',
+                        hintText: 'Confirm new password',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          icon: Icon(obscureConfirm ? Icons.visibility_off : Icons.visibility),
+                          onPressed: () {
+                            setDialogState(() {
+                              obscureConfirm = !obscureConfirm;
+                            });
+                          },
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 14, color: Colors.grey[500]),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Password must be at least 6 characters',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: isLoading
+                            ? null
+                            : () async {
+                                if (newPasswordController.text.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Please enter a password')),
+                                  );
+                                  return;
+                                }
+
+                                // TESTING PHASE ONLY:
+                                // Minimum password length check is temporarily disabled.
+                                // Re-enable before release.
+                                // if (newPasswordController.text.length < 6) {
+                                //   ScaffoldMessenger.of(context).showSnackBar(
+                                //     const SnackBar(content: Text('Password must be at least 6 characters')),
+                                //   );
+                                //   return;
+                                // }
+
+                                if (newPasswordController.text != confirmPasswordController.text) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Passwords do not match')),
+                                  );
+                                  return;
+                                }
+
+                                setDialogState(() {
+                                  isLoading = true;
+                                });
+
+                                try {
+                                  await _apiService.setPassword(
+                                    newPassword: newPasswordController.text,
+                                    confirmPassword: confirmPasswordController.text,
+                                  );
+
+                                  if (mounted) {
+                                    Navigator.pop(dialogContext);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Password set successfully!'),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+
+                                    _navigateToHome(username, familyTitle);
+                                  }
+                                } catch (e) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Failed: ${e.toString().replaceAll('Exception: ', '')}'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                } finally {
+                                  if (mounted) {
+                                    setDialogState(() {
+                                      isLoading = false;
+                                    });
+                                  }
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF4CAF50),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: isLoading
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text(
+                                'Set Password',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFE7F0E5),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFE7F0E5),
+        foregroundColor: const Color(0xFF1A1A1A),
+        elevation: 0,
+        title: const Text('Choose Family'),
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          child: ContentContainer(
+            maxWidth: 420,
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.72),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 30,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                const SizedBox(height: 8),
+                const Text(
+                  'Continue Login',
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  widget.email,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.black54,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: _selectedFamilyId,
+                      hint: const Text('Select family'),
+                      items: widget.families.map((family) {
+                        final familyId = family['family_id']?.toString() ?? '';
+                        final title = family['familyTitle']?.toString() ?? 'Family';
+                        final username = family['username']?.toString() ?? '';
+                        return DropdownMenuItem<String>(
+                          value: familyId,
+                          child: Text('$title ($username)'),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedFamilyId = value;
+                        });
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: TextField(
+                    controller: _passwordController,
+                    obscureText: _obscurePassword,
+                    decoration: InputDecoration(
+                      hintText: 'Password',
+                      hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
+                      border: const OutlineInputBorder(
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 16,
+                      ),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                          color: Colors.grey,
+                          size: 22,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _handleLogin,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4CAF50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            'Log In',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
             ),
           ),
         ),
@@ -777,24 +1267,48 @@ class _SignUpPageState extends State<SignUpPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFD4E5D4),
+      backgroundColor: const Color(0xFFE7F0E5),
       body: Center(
         child: SingleChildScrollView(
           child: ContentContainer(
             maxWidth: 420,
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.72),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 30,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
                 const SizedBox(height: 40),
                 
                 // Parent Icon
-                Image.asset(
-                  'assets/parent_icon.png',
-                  width: 120,
-                  height: 120,
+                Container(
+                  width: 92,
+                  height: 92,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDDEEDB),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFF8FCF92), width: 1.4),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Image.asset(
+                      'assets/parent_icon.png',
+                      fit: BoxFit.contain,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 28),
                 
                 // Title
                 const Text(
@@ -994,6 +1508,7 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
                 const SizedBox(height: 40),
               ],
+            ),
             ),
           ),
         ),

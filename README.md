@@ -28,6 +28,8 @@ A comprehensive family management application that enables parents to assign tas
 
 This system helps families organize household tasks and motivate children through a gamified rewards system. Parents can create tasks, assign them to family members, and award points upon completion. Children can accumulate points and redeem them for rewards from their wishlist.
 
+Quick context for AI agents and new contributors: see [AGENTS.md](AGENTS.md) and [PROJECT_CONTEXT.json](PROJECT_CONTEXT.json).
+
 ---
 
 ## ✨ Features

@@ -14,12 +14,13 @@ exports.initializeWallets = catchAsync(async (req, res, next) => {
   const existing = [];
   
   for (const member of members) {
-    const existingWallet = await PointWallet.findOne({ member_mail: member.mail });
+    const existingWallet = await PointWallet.findOne({ member_mail: member.mail, family_id: req.familyAccount._id });
     if (existingWallet) {
       existing.push(member.mail);
     } else {
       await PointWallet.create({
         member_mail: member.mail,
+        family_id: req.familyAccount._id,
         total_points: 0
       });
       created.push(member.mail);
@@ -42,12 +43,13 @@ exports.getMyWallet = catchAsync(async (req, res, next) => {
     return next(new AppError("Member email not found", 400));
   }
   
-  let wallet = await PointWallet.findOne({ member_mail: memberMail });
+  let wallet = await PointWallet.findOne({ member_mail: memberMail, family_id: req.familyAccount._id });
   
   if (!wallet) {
     // Create wallet if doesn't exist
     wallet = await PointWallet.create({ 
       member_mail: memberMail, 
+      family_id: req.familyAccount._id,
       total_points: 0 
     });
   }
@@ -73,11 +75,12 @@ exports.getMemberWallet = catchAsync(async (req, res, next) => {
     return next(new AppError("Member not found in your family", 404));
   }
   
-  let wallet = await PointWallet.findOne({ member_mail: memberMail });
+  let wallet = await PointWallet.findOne({ member_mail: memberMail, family_id: req.familyAccount._id });
   
   if (!wallet) {
     wallet = await PointWallet.create({ 
       member_mail: memberMail, 
+      family_id: req.familyAccount._id,
       total_points: 0 
     });
   }
@@ -107,10 +110,11 @@ exports.manualAdjustment = catchAsync(async (req, res, next) => {
     return next(new AppError("Member not found in your family", 404));
   }
   
-  let wallet = await PointWallet.findOne({ member_mail });
+  let wallet = await PointWallet.findOne({ member_mail, family_id: req.familyAccount._id });
   if (!wallet) {
     wallet = await PointWallet.create({ 
       member_mail, 
+      family_id: req.familyAccount._id,
       total_points: 0 
     });
   }
@@ -123,6 +127,7 @@ exports.manualAdjustment = catchAsync(async (req, res, next) => {
   await PointDetails.create({
     wallet_id: wallet._id,
     member_mail,
+    family_id: req.familyAccount._id,
     points_amount,
     reason_type: points_amount > 0 ? 'manual_grant' : 'adjustment',
     granted_by: req.member.mail,
@@ -160,7 +165,8 @@ exports.getPointsRanking = catchAsync(async (req, res, next) => {
   
   // Get all wallets for these members
   const wallets = await PointWallet.find({ 
-    member_mail: { $in: memberEmails } 
+    member_mail: { $in: memberEmails },
+    family_id: req.familyAccount._id
   });
   
   // Create a map of wallets by email for quick lookup

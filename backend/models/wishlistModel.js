@@ -4,8 +4,12 @@ const wishlistSchema = new mongoose.Schema({
   member_mail: {
     type: String,
     required: [true, 'Please provide the member email'],
-    unique: true,
     ref: 'Member'
+  },
+  family_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'FamilyAccount',
+    required: [true, 'Please provide a family account ID']
   },
   title: {
     type: String,
@@ -15,8 +19,7 @@ const wishlistSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for faster lookups
-wishlistSchema.index({ member_mail: 1 });
+wishlistSchema.index({ member_mail: 1, family_id: 1 }, { unique: true });
 
 const Wishlist = mongoose.model('Wishlist', wishlistSchema);
 

@@ -11,6 +11,42 @@ const PointWallet = require("../models/point_walletModel");
 const Wishlist = require("../models/wishlistModel");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
+const mongoose = require("mongoose");
+
+//========================================================================================
+
+// Get families linked to an email so user can choose which family to login to
+exports.getFamiliesByMail = catchAsync(async (req, res, next) => {
+  const mail = (req.query.mail || req.body.mail || '').trim();
+
+  if (!mail) {
+    return next(new AppError("Please provide email", 400));
+  }
+
+  const members = await memberModel.find({ mail })
+    .populate('family_id', 'Title isActivated active')
+    .populate('member_type_id', 'type');
+
+  const families = members
+    .filter((m) => m.family_id)
+    .map((m) => ({
+      family_id: m.family_id._id,
+      familyTitle: m.family_id.Title,
+      isActivated: m.family_id.isActivated,
+      isActive: m.family_id.active,
+      member_id: m._id,
+      username: m.username,
+      memberType: m.member_type_id?.type || null,
+    }));
+
+  res.status(200).json({
+    message: "success",
+    data: {
+      mail,
+      families,
+    },
+  });
+});
 
 //========================================================================================
 
@@ -59,11 +95,13 @@ exports.signUp = catchAsync(async (req, res, next) => {
   try {
     await PointWallet.create({
       member_mail: mail,
+      family_id: newAccount._id,
       total_points: 0
     });
     
     await Wishlist.create({
       member_mail: mail,
+      family_id: newAccount._id,
       title: `${username}'s Wishlist`
     });
   } catch (err) {
@@ -76,6 +114,9 @@ exports.signUp = catchAsync(async (req, res, next) => {
   res.status(201).json({
     message: "success",
     data: {
+      familyId: newAccount._id,
+      memberId: newMember._id,
+      mail: newMember.mail,
       username: newMember.username,
       familyTitle: newAccount.Title,
       memberType: parentType.type,
@@ -91,17 +132,51 @@ exports.signUp = catchAsync(async (req, res, next) => {
 // go search for mails in members ,then check for the family he belong to (if it is activated or not )
 // , then go to memberType to check for the type of this member
 exports.login = catchAsync(async (req, res, next) => {
-  const { mail, password } = req.body;
+  const { mail, password, family_id } = req.body;
   
   if (!mail || !password) {
     return next(new AppError("Please provide email and password", 400));
   }
 
-  // Step 1: Find the member with this mail (include password field)
-  const member = await memberModel.findOne({ mail })
-    .select('+password')
-    .populate('family_id')
-    .populate('member_type_id');
+  // Step 1: Resolve member by email and family
+  let member;
+
+  if (family_id) {
+    if (!mongoose.Types.ObjectId.isValid(family_id)) {
+      return next(new AppError("Invalid family ID", 400));
+    }
+
+    member = await memberModel.findOne({ mail, family_id })
+      .select('+password')
+      .populate('family_id')
+      .populate('member_type_id');
+  } else {
+    const matchedMembers = await memberModel.find({ mail })
+      .select('+password')
+      .populate('family_id')
+      .populate('member_type_id');
+
+    if (matchedMembers.length > 1) {
+      return res.status(409).json({
+        message: "Multiple families found for this email. Please choose a family and try again.",
+        data: {
+          families: matchedMembers
+            .filter((m) => m.family_id)
+            .map((m) => ({
+              family_id: m.family_id._id,
+              familyTitle: m.family_id.Title,
+              isActivated: m.family_id.isActivated,
+              isActive: m.family_id.active,
+              member_id: m._id,
+              username: m.username,
+              memberType: m.member_type_id?.type || null,
+            })),
+        },
+      });
+    }
+
+    member = matchedMembers[0];
+  }
 
   if (!member) {
     return next(new AppError("Incorrect email or password", 401));
@@ -147,6 +222,9 @@ exports.login = catchAsync(async (req, res, next) => {
   res.status(200).json({
     message: "success",
     data: {
+      familyId: familyAccount._id,
+      memberId: member._id,
+      mail: member.mail,
       username: member.username,
       familyTitle: familyAccount.Title,
       memberType: member.member_type_id.type,
@@ -170,9 +248,12 @@ exports.setPassword = catchAsync(async (req, res, next) => {
     return next(new AppError("Passwords do not match", 400));
   }
   
-  if (newPassword.length < 6) {
-    return next(new AppError("Password must be at least 6 characters", 400));
-  }
+  // TESTING PHASE ONLY:
+  // Minimum password length check is temporarily disabled to simplify test accounts.
+  // Re-enable this block before release.
+  // if (newPassword.length < 6) {
+  //   return next(new AppError("Password must be at least 6 characters", 400));
+  // }
   
   // Get the member with password
   const member = await memberModel.findById(req.memberId).select('+password');

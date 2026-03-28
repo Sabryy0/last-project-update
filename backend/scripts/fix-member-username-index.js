@@ -2,7 +2,8 @@
 // Usage: cd backend && node scripts/fix-member-username-index.js
 
 const mongoose = require('mongoose');
-require('dotenv').config({ path: '../.env' });
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const Member = require('../models/MemberModel');
 
@@ -20,26 +21,19 @@ async function fixMemberUsernameIndex() {
       console.log('  -', JSON.stringify(index.key), index.unique ? '(unique)' : '');
     });
 
-    // Check if there's a standalone username index
-    const usernameIndex = currentIndexes.find(idx => 
-      idx.key.username && !idx.key.family_id
+    // Drop any existing username-only and username+family indexes by detected name.
+    // This avoids failures when MongoDB uses non-default index names.
+    const targetIndexes = currentIndexes.filter(
+      (idx) => idx.key.username || (idx.key.username && idx.key.family_id)
     );
 
-    if (usernameIndex) {
-      console.log('\n🔄 Dropping standalone username index...');
-      await Member.collection.dropIndex('username_1');
-      console.log('✅ Standalone username index dropped');
-    }
+    for (const idx of targetIndexes) {
+      if (idx.name === '_id_') continue;
+      if (!(idx.key.username && (Object.keys(idx.key).length === 1 || idx.key.family_id))) continue;
 
-    // Drop compound index if it exists and recreate
-    const compoundIndex = currentIndexes.find(idx => 
-      idx.key.username && idx.key.family_id
-    );
-
-    if (compoundIndex) {
-      console.log('\n🔄 Dropping existing compound index...');
-      await Member.collection.dropIndex('username_1_family_id_1');
-      console.log('✅ Existing compound index dropped');
+      console.log(`\n🔄 Dropping index: ${idx.name} (${JSON.stringify(idx.key)})`);
+      await Member.collection.dropIndex(idx.name);
+      console.log(`✅ Dropped index: ${idx.name}`);
     }
 
     // Create the compound index (username unique per family)

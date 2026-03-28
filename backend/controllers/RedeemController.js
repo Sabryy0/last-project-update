@@ -49,7 +49,7 @@ exports.requestRedemption = catchAsync(async (req, res, next) => {
   }
   
   // Check if member has enough points
-  const wallet = await PointWallet.findOne({ member_mail: req.member.mail });
+  const wallet = await PointWallet.findOne({ member_mail: req.member.mail, family_id: req.familyAccount._id });
   if (!wallet || wallet.total_points < finalPointDeduction) {
     return next(new AppError(`Insufficient points. You have ${wallet?.total_points || 0} points but need ${finalPointDeduction} points.`, 400));
   }
@@ -237,7 +237,7 @@ exports.childAcceptRedemption = catchAsync(async (req, res, next) => {
   
   if (accept) {
     // Child accepts - deduct points
-    const wallet = await PointWallet.findOne({ member_mail: req.member.mail });
+    const wallet = await PointWallet.findOne({ member_mail: req.member.mail, family_id: req.familyAccount._id });
     
     if (!wallet || wallet.total_points < redeemRequest.point_deduction) {
       return next(new AppError("Insufficient points for redemption", 400));
@@ -251,6 +251,7 @@ exports.childAcceptRedemption = catchAsync(async (req, res, next) => {
     await PointDetails.create({
       wallet_id: wallet._id,
       member_mail: req.member.mail,
+      family_id: req.familyAccount._id,
       points_amount: -redeemRequest.point_deduction,
       reason_type: 'redeem',
       redeem_id: redeemRequest._id,

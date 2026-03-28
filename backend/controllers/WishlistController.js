@@ -8,12 +8,13 @@ const Member = require("../models/MemberModel");
 //========================================================================================
 // Get my wishlist
 exports.getMyWishlist = catchAsync(async (req, res, next) => {
-  let wishlist = await Wishlist.findOne({ member_mail: req.member.mail });
+  let wishlist = await Wishlist.findOne({ member_mail: req.member.mail, family_id: req.familyAccount._id });
   
   if (!wishlist) {
     // Create wishlist if doesn't exist
     wishlist = await Wishlist.create({ 
       member_mail: req.member.mail,
+      family_id: req.familyAccount._id,
       title: 'My Wishlist'
     });
   }
@@ -51,11 +52,12 @@ exports.getMemberWishlist = catchAsync(async (req, res, next) => {
     return next(new AppError("Member not found in your family", 404));
   }
   
-  let wishlist = await Wishlist.findOne({ member_mail: memberMail });
+  let wishlist = await Wishlist.findOne({ member_mail: memberMail, family_id: req.familyAccount._id });
   
   if (!wishlist) {
     wishlist = await Wishlist.create({ 
       member_mail: memberMail,
+      family_id: req.familyAccount._id,
       title: `${member.username}'s Wishlist`
     });
   }
@@ -101,10 +103,11 @@ exports.addWishlistItem = catchAsync(async (req, res, next) => {
   }
   
   // Get or create wishlist
-  let wishlist = await Wishlist.findOne({ member_mail: req.member.mail });
+  let wishlist = await Wishlist.findOne({ member_mail: req.member.mail, family_id: req.familyAccount._id });
   if (!wishlist) {
     wishlist = await Wishlist.create({ 
       member_mail: req.member.mail,
+      family_id: req.familyAccount._id,
       title: 'My Wishlist'
     });
   }
@@ -159,10 +162,11 @@ exports.addWishlistItemToMember = catchAsync(async (req, res, next) => {
   }
   
   // Get or create wishlist
-  let wishlist = await Wishlist.findOne({ member_mail: memberMail });
+  let wishlist = await Wishlist.findOne({ member_mail: memberMail, family_id: req.familyAccount._id });
   if (!wishlist) {
     wishlist = await Wishlist.create({ 
       member_mail: memberMail,
+      family_id: req.familyAccount._id,
       title: `${member.username}'s Wishlist`
     });
   }
@@ -252,7 +256,7 @@ exports.prioritizeWishlistItems = catchAsync(async (req, res, next) => {
   }
   
   // Get wishlist
-  const wishlist = await Wishlist.findOne({ member_mail: req.member.mail });
+  const wishlist = await Wishlist.findOne({ member_mail: req.member.mail, family_id: req.familyAccount._id });
   if (!wishlist) {
     return next(new AppError("Wishlist not found", 404));
   }
@@ -330,12 +334,12 @@ exports.removeWishlistItem = catchAsync(async (req, res, next) => {
 exports.getWishlistProgress = catchAsync(async (req, res, next) => {
   const PointWallet = require("../models/point_walletModel");
   
-  let wishlist = await Wishlist.findOne({ member_mail: req.member.mail });
+  let wishlist = await Wishlist.findOne({ member_mail: req.member.mail, family_id: req.familyAccount._id });
   if (!wishlist) {
     return next(new AppError("Wishlist not found", 404));
   }
   
-  const wallet = await PointWallet.findOne({ member_mail: req.member.mail });
+  const wallet = await PointWallet.findOne({ member_mail: req.member.mail, family_id: req.familyAccount._id });
   const currentPoints = wallet ? wallet.total_points : 0;
   
   const items = await WishlistItem.find({ 

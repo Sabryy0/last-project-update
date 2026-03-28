@@ -20,12 +20,12 @@ exports.updateLocation = catchAsync(async (req, res, next) => {
     return next(new AppError("Please provide latitude and longitude", 400));
   }
 
-  const existingShare = await LocationShare.findOne({ member_mail: req.member.mail });
+  const existingShare = await LocationShare.findOne({ member_mail: req.member.mail, family_id: req.familyAccount._id });
   const sharingEnabled = existingShare ? existingShare.is_sharing_enabled : true;
 
   // Upsert location share record
   const locationShare = await LocationShare.findOneAndUpdate(
-    { member_mail: req.member.mail },
+    { member_mail: req.member.mail, family_id: req.familyAccount._id },
     {
       member_mail: req.member.mail,
       family_id: req.familyAccount._id,
@@ -64,7 +64,7 @@ exports.toggleSharing = catchAsync(async (req, res, next) => {
   }
 
   const locationShare = await LocationShare.findOneAndUpdate(
-    { member_mail: req.member.mail },
+    { member_mail: req.member.mail, family_id: req.familyAccount._id },
     { is_sharing_enabled: enabled },
     { new: true }
   );
@@ -112,7 +112,7 @@ exports.toggleSharing = catchAsync(async (req, res, next) => {
 //========================================================================================
 // Get my location
 exports.getMyLocation = catchAsync(async (req, res, next) => {
-  const location = await LocationShare.findOne({ member_mail: req.member.mail });
+  const location = await LocationShare.findOne({ member_mail: req.member.mail, family_id: req.familyAccount._id });
 
   res.status(200).json({
     status: "success",
@@ -263,7 +263,7 @@ exports.getMyPermissionRequests = catchAsync(async (req, res, next) => {
   // Enrich with requester info
   const enriched = [];
   for (const perm of permissions) {
-    const requester = await Member.findOne({ mail: perm.requester_mail });
+    const requester = await Member.findOne({ mail: perm.requester_mail, family_id: req.familyAccount._id });
     enriched.push({
       ...perm.toObject(),
       requester_username: requester ? requester.username : 'Unknown'
@@ -288,7 +288,7 @@ exports.getMyOutgoingRequests = catchAsync(async (req, res, next) => {
   // Enrich with target info
   const enriched = [];
   for (const perm of permissions) {
-    const target = await Member.findOne({ mail: perm.target_mail });
+    const target = await Member.findOne({ mail: perm.target_mail, family_id: req.familyAccount._id });
     enriched.push({
       ...perm.toObject(),
       target_username: target ? target.username : 'Unknown'
@@ -486,7 +486,8 @@ exports.markAlertRead = catchAsync(async (req, res, next) => {
   const alert = await LocationAlert.findOneAndUpdate(
     {
       _id: alertId,
-      member_mail: req.member.mail
+      member_mail: req.member.mail,
+      family_id: req.familyAccount._id
     },
     { is_read: true },
     { new: true }
@@ -525,7 +526,8 @@ exports.deleteAlert = catchAsync(async (req, res, next) => {
 
   const alert = await LocationAlert.findOneAndDelete({
     _id: alertId,
-    member_mail: req.member.mail
+    member_mail: req.member.mail,
+    family_id: req.familyAccount._id
   });
 
   if (!alert) {
@@ -610,7 +612,7 @@ exports.getReceivedLocations = catchAsync(async (req, res, next) => {
   // Enrich with sender info
   const enriched = [];
   for (const loc of locations) {
-    const sender = await Member.findOne({ mail: loc.sender_mail });
+    const sender = await Member.findOne({ mail: loc.sender_mail, family_id: req.familyAccount._id });
     enriched.push({
       ...loc.toObject(),
       sender_username: sender ? sender.username : 'Unknown'
@@ -634,7 +636,7 @@ exports.getSentLocations = catchAsync(async (req, res, next) => {
   // Enrich with receiver info
   const enriched = [];
   for (const loc of locations) {
-    const receiver = await Member.findOne({ mail: loc.receiver_mail });
+    const receiver = await Member.findOne({ mail: loc.receiver_mail, family_id: req.familyAccount._id });
     enriched.push({
       ...loc.toObject(),
       receiver_username: receiver ? receiver.username : 'Unknown'

@@ -90,7 +90,27 @@ app.use((err, req, res, next) => {
   
   // Handle duplicate key errors
   if (err.code === 11000) {
-    const field = Object.keys(err.keyPattern)[0];
+    const keyPattern = err.keyPattern || {};
+
+    if (keyPattern.username && keyPattern.family_id) {
+      return res.status(400).json({
+        message: 'This username already exists in this family. Please choose a different username.'
+      });
+    }
+
+    if (keyPattern.mail && keyPattern.family_id) {
+      return res.status(400).json({
+        message: 'This email is already linked to this family.'
+      });
+    }
+
+    if (keyPattern.member_mail && keyPattern.family_id) {
+      return res.status(400).json({
+        message: 'This member record already exists for this family.'
+      });
+    }
+
+    const field = Object.keys(keyPattern)[0] || 'field';
     const fieldName = field === 'mail' ? 'email' : field;
     return res.status(400).json({
       message: `This ${fieldName} is already registered. Please use a different one.`

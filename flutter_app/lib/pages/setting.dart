@@ -20,6 +20,8 @@ class _SettingPageState extends State<SettingPage> {
   
   String _familyTitle = '';
   String _userName = '';
+  List<Map<String, dynamic>> _savedProfiles = [];
+  String _activeProfileKey = '';
   bool _darkMode = false;
   bool _locationSharing = true;
   bool _isUpdatingLocationSharing = false;
@@ -28,6 +30,7 @@ class _SettingPageState extends State<SettingPage> {
   void initState() {
     super.initState();
     _loadUserData();
+    _loadSavedProfiles();
     _loadLocationSharing();
   }
 
@@ -39,7 +42,161 @@ class _SettingPageState extends State<SettingPage> {
     setState(() {
       _userName = userName;
       _familyTitle = familyTitle;
+      _activeProfileKey = prefs.getString('activeProfileKey') ?? '';
     });
+  }
+
+  Future<void> _loadSavedProfiles() async {
+    final profiles = await _apiService.getSavedProfiles();
+    if (!mounted) return;
+    setState(() {
+      _savedProfiles = profiles;
+    });
+  }
+
+  Future<void> _switchToProfile(String profileKey) async {
+    try {
+      await _apiService.switchProfile(profileKey);
+      await _loadUserData();
+      await _loadSavedProfiles();
+      await _loadLocationSharing();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile switched successfully')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to switch profile: ${e.toString().replaceAll('Exception: ', '')}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _removeProfile(String profileKey) async {
+    try {
+      final wasActive = profileKey == _activeProfileKey;
+      await _apiService.removeSavedProfile(profileKey);
+      await _loadSavedProfiles();
+      await _loadUserData();
+      await _loadLocationSharing();
+
+      if (!mounted) return;
+
+      if (wasActive && _savedProfiles.isEmpty) {
+        if (widget.onLogout != null) {
+          widget.onLogout!();
+        } else {
+          Navigator.of(context).pushReplacementNamed('/login');
+        }
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile removed successfully')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to remove profile: ${e.toString().replaceAll('Exception: ', '')}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showSwitchProfileDialog() {
+    if (_savedProfiles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No saved profiles yet. Login to another family first.')),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Switch Profile'),
+          content: SizedBox(
+            width: 420,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: _savedProfiles.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, index) {
+                final profile = _savedProfiles[index];
+                final profileKey = profile['profileKey']?.toString() ?? '';
+                final isActive = profileKey == _activeProfileKey;
+                final title = profile['familyTitle']?.toString() ?? 'Family';
+                final username = profile['username']?.toString() ?? 'Member';
+                final mail = profile['mail']?.toString() ?? '';
+
+                return ListTile(
+                  title: Text('$title ($username)'),
+                  subtitle: Text(mail),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isActive)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 4),
+                          child: Icon(Icons.check_circle, color: Color(0xFF4CAF50)),
+                        ),
+                      IconButton(
+                        tooltip: 'Remove profile',
+                        icon: const Icon(Icons.close, color: Colors.redAccent),
+                        onPressed: () async {
+                          Navigator.of(dialogContext).pop();
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (confirmContext) {
+                              return AlertDialog(
+                                title: const Text('Remove saved profile?'),
+                                content: Text('Remove $title ($username) from saved profiles?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.of(confirmContext).pop(false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.of(confirmContext).pop(true),
+                                    child: const Text('Remove', style: TextStyle(color: Colors.red)),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+
+                          if (confirmed == true) {
+                            await _removeProfile(profileKey);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  onTap: () async {
+                    Navigator.of(dialogContext).pop();
+                    if (!isActive) {
+                      await _switchToProfile(profileKey);
+                    }
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _loadLocationSharing() async {
@@ -94,11 +251,19 @@ class _SettingPageState extends State<SettingPage> {
     }
   }
 
-  Future<void> _handleLogout() async {
+  Future<void> _handleLogoutCurrent() async {
     await _apiService.logout();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    
+
+    if (widget.onLogout != null) {
+      widget.onLogout!();
+    } else if (mounted) {
+      Navigator.of(context).pushReplacementNamed('/login');
+    }
+  }
+
+  Future<void> _handleLogoutAll() async {
+    await _apiService.logoutAllProfiles();
+
     if (widget.onLogout != null) {
       widget.onLogout!();
     } else if (mounted) {
@@ -265,6 +430,13 @@ class _SettingPageState extends State<SettingPage> {
                 title: 'Change Password',
                 onTap: () {
                   _showChangePasswordDialog();
+                },
+              ),
+              const Divider(height: 1, thickness: 1, color: Color(0xFFD4E7D7)),
+              _buildSettingItem(
+                title: 'Switch Profile',
+                onTap: () {
+                  _showSwitchProfileDialog();
                 },
               ),
               const Divider(height: 1, thickness: 1, color: Color(0xFFD4E7D7)),
@@ -455,12 +627,15 @@ class _SettingPageState extends State<SettingPage> {
                                         return;
                                       }
                                       
-                                      if (newPasswordController.text.length < 6) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Password must be at least 6 characters')),
-                                        );
-                                        return;
-                                      }
+                                      // TESTING PHASE ONLY:
+                                      // Minimum password length check is temporarily disabled.
+                                      // Re-enable before release.
+                                      // if (newPasswordController.text.length < 6) {
+                                      //   ScaffoldMessenger.of(context).showSnackBar(
+                                      //     const SnackBar(content: Text('Password must be at least 6 characters')),
+                                      //   );
+                                      //   return;
+                                      // }
                                       
                                       if (newPasswordController.text != confirmPasswordController.text) {
                                         ScaffoldMessenger.of(context).showSnackBar(
@@ -774,7 +949,37 @@ class _SettingPageState extends State<SettingPage> {
         width: double.infinity,
         height: 56,
         child: ElevatedButton(
-          onPressed: _handleLogout,
+          onPressed: () {
+            showDialog(
+              context: context,
+              builder: (dialogContext) {
+                return AlertDialog(
+                  title: const Text('Logout options'),
+                  content: const Text('Choose whether to logout this profile only or all saved profiles.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        Navigator.of(dialogContext).pop();
+                        await _handleLogoutCurrent();
+                      },
+                      child: const Text('Logout current'),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        Navigator.of(dialogContext).pop();
+                        await _handleLogoutAll();
+                      },
+                      child: const Text('Logout all', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF4CAF50),
             foregroundColor: Colors.white,
@@ -784,7 +989,7 @@ class _SettingPageState extends State<SettingPage> {
             elevation: 2,
           ),
           child: const Text(
-            'Log Out',
+            'Logout Options',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
@@ -908,7 +1113,7 @@ class _SettingPageState extends State<SettingPage> {
                               );
                               // Auto logout after deactivation
                               await Future.delayed(const Duration(seconds: 1));
-                              _handleLogout();
+                              _handleLogoutCurrent();
                             }
                           } catch (e) {
                             setDialogState(() {

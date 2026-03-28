@@ -23,6 +23,7 @@ import 'pages/inventory_alerts_screen.dart';
 import 'pages/groceries_screen.dart';
 import 'pages/grocery_list_detail_screen.dart';
 import 'pages/family_map_screen.dart';
+import 'core/services/api_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,7 +42,7 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.green,
         useMaterial3: true,
       ),
-      initialRoute: '/login',
+      home: const AuthBootstrapScreen(),
       routes: {
         '/splash': (context) => const SplashScreen(),
         '/onboarding': (context) => const OnboardingScreen(),
@@ -68,6 +69,61 @@ class MyApp extends StatelessWidget {
         '/grocery-list-detail': (context) => const GroceryListDetailScreen(),
         '/family-map': (context) => const FamilyMapScreen(),
       },
+    );
+  }
+}
+
+class AuthBootstrapScreen extends StatefulWidget {
+  const AuthBootstrapScreen({super.key});
+
+  @override
+  State<AuthBootstrapScreen> createState() => _AuthBootstrapScreenState();
+}
+
+class _AuthBootstrapScreenState extends State<AuthBootstrapScreen> {
+  final ApiService _apiService = ApiService();
+
+  @override
+  void initState() {
+    super.initState();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    try {
+      final hasSession = await _apiService.hasActiveSession();
+
+      if (hasSession) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacementNamed('/home');
+        return;
+      }
+
+      final activeKey = await _apiService.getActiveProfileKey();
+      if (activeKey != null && activeKey.isNotEmpty) {
+        try {
+          await _apiService.switchProfile(activeKey);
+          if (!mounted) return;
+          Navigator.of(context).pushReplacementNamed('/home');
+          return;
+        } catch (_) {
+          // Fall through to login if saved active profile cannot be restored.
+        }
+      }
+    } catch (_) {
+      // Fall through to login.
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pushReplacementNamed('/login');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(),
+      ),
     );
   }
 }

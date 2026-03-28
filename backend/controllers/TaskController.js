@@ -393,10 +393,11 @@ exports.approveTaskCompletion = catchAsync(async (req, res, next) => {
     await taskDetail.save();
     
     // Update point wallet
-    let wallet = await PointWallet.findOne({ member_mail: taskDetail.member_mail });
+    let wallet = await PointWallet.findOne({ member_mail: taskDetail.member_mail, family_id: req.familyAccount._id });
     if (!wallet) {
       wallet = await PointWallet.create({ 
         member_mail: taskDetail.member_mail, 
+        family_id: req.familyAccount._id,
         total_points: 0 
       });
     }
@@ -408,6 +409,7 @@ exports.approveTaskCompletion = catchAsync(async (req, res, next) => {
     await PointDetails.create({
       wallet_id: wallet._id,
       member_mail: taskDetail.member_mail,
+      family_id: req.familyAccount._id,
       points_amount: taskDetail.assigned_points,
       reason_type: 'task_completion',
       task_id: taskDetail.task_id,
@@ -461,10 +463,11 @@ exports.manualPenalty = catchAsync(async (req, res, next) => {
   }
   
   // Update wallet
-  let wallet = await PointWallet.findOne({ member_mail: taskDetail.member_mail });
+  let wallet = await PointWallet.findOne({ member_mail: taskDetail.member_mail, family_id: req.familyAccount._id });
   if (!wallet) {
     wallet = await PointWallet.create({ 
       member_mail: taskDetail.member_mail, 
+      family_id: req.familyAccount._id,
       total_points: 0 
     });
   }
@@ -476,6 +479,7 @@ exports.manualPenalty = catchAsync(async (req, res, next) => {
   await PointDetails.create({
     wallet_id: wallet._id,
     member_mail: taskDetail.member_mail,
+    family_id: req.familyAccount._id,
     points_amount: -penalty_points,
     reason_type: 'penalty',
     task_id: taskDetail.task_id,

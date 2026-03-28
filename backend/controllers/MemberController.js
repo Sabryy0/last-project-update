@@ -51,6 +51,7 @@ exports.createMember = catchAsync(async (req, res, next) => {
   try {
     await PointWallet.create({
       member_mail: mail,
+      family_id,
       total_points: 0
     });
   } catch (err) { 
@@ -61,6 +62,7 @@ exports.createMember = catchAsync(async (req, res, next) => {
   try {
     await Wishlist.create({
       member_mail: mail,
+      family_id,
       title: `${username}'s Wishlist`
     });
   } catch (err) {
@@ -135,16 +137,16 @@ exports.deleteMember = catchAsync(async (req, res, next) => {
   
   try {
     // Delete point wallet
-    await PointWallet.deleteOne({ member_mail: memberMail });
+    await PointWallet.deleteOne({ member_mail: memberMail, family_id });
     
     // Delete point history
-    await PointHistory.deleteMany({ member_mail: memberMail });
+    await PointHistory.deleteMany({ member_mail: memberMail, family_id });
     
     // Find and delete wishlist items, then wishlist
-    const wishlist = await Wishlist.findOne({ member_mail: memberMail });
+    const wishlist = await Wishlist.findOne({ member_mail: memberMail, family_id });
     if (wishlist) {
       await WishlistItem.deleteMany({ wishlist_id: wishlist._id });
-      await Wishlist.deleteOne({ member_mail: memberMail });
+      await Wishlist.deleteOne({ member_mail: memberMail, family_id });
     }
   } catch (err) {
     console.log("Note: Error cleaning up member data:", err.message);

@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
-dotenv.config({ path: '../.env' });
+const path = require('path');
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const dbString = process.env.DB.replace('<db_password>', process.env.DB_PASSWORD);
 
@@ -19,10 +20,11 @@ async function initWallets() {
     let existing = 0;
 
     for (const m of members) {
-      const wallet = await PointWallet.findOne({ member_mail: m.mail });
+      const wallet = await PointWallet.findOne({ member_mail: m.mail, family_id: m.family_id });
       if (!wallet) {
         await PointWallet.create({ 
           member_mail: m.mail, 
+          family_id: m.family_id,
           total_points: 0 
         });
         console.log(`  ✅ Created wallet for: ${m.mail}`);
@@ -40,7 +42,7 @@ async function initWallets() {
     const allWallets = await PointWallet.find();
     console.log(`\n💰 All wallets in database:`);
     allWallets.forEach(w => {
-      console.log(`   ${w.member_mail}: ${w.total_points} points`);
+      console.log(`   ${w.member_mail} [family:${w.family_id}]: ${w.total_points} points`);
     });
 
     await mongoose.disconnect();

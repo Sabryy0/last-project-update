@@ -1,0 +1,97 @@
+{
+  "project": {
+    "name": "Family Hub",
+    "type": "graduation_project",
+    "summary": "Family management platform with auth, tasks, points, rewards, inventory, meals, grocery, and location features.",
+    "timeline": "~3 months",
+    "planned_modules": ["budgeting", "planning"]
+  },
+  "workspace": {
+    "root": "auth implementation",
+    "apps": [
+      {
+        "name": "backend",
+        "stack": ["nodejs", "express", "mongodb", "mongoose"],
+        "entry": ["backend/server.js", "backend/app.js"]
+      },
+      {
+        "name": "flutter_app",
+        "stack": ["flutter", "dart"],
+        "entry": ["flutter_app/lib/main.dart"],
+        "ui_pages_dir": "flutter_app/lib/pages",
+        "core_dir": "flutter_app/lib/core"
+      },
+      {
+        "name": "React_frontend",
+        "stack": ["react", "javascript"],
+        "status": "in_development"
+      }
+    ]
+  },
+  "backend_pattern": {
+    "routes_dir": "backend/routes",
+    "controllers_dir": "backend/controllers",
+    "models_dir": "backend/models",
+    "utils_dir": "backend/Utils",
+    "request_flow": ["route", "controller", "model", "json_response"]
+  },
+  "domains": [
+    "auth",
+    "family_account",
+    "member",
+    "member_type",
+    "task",
+    "task_category",
+    "task_history",
+    "point_wallet",
+    "point_history",
+    "redeem",
+    "wishlist",
+    "grocery",
+    "inventory",
+    "inventory_alert",
+    "inventory_category",
+    "meal",
+    "meal_suggestion",
+    "recipe",
+    "receipt",
+    "leftover",
+    "location",
+    "unit"
+  ],
+  "run": {
+    "backend_dev": "cd backend && npm run dev",
+    "backend_prod": "cd backend && npm start",
+    "flutter": "cd flutter_app && flutter run",
+    "flutter_windows": "cd flutter_app && flutter run -d windows",
+    "flutter_chrome": "cd flutter_app && flutter run -d chrome",
+    "react": "cd React_frontend && npm start"
+  },
+  "ai_strategy": {
+    "approach": "hybrid_rules_retrieval_llm",
+    "budgeting_mvp": [
+      "expense_categorization",
+      "weekly_budget_suggestions",
+      "overspending_alerts",
+      "saving_tips"
+    ],
+    "planning_mvp": [
+      "meal_suggestions_from_inventory",
+      "shopping_list_suggestions",
+      "task_schedule_suggestions"
+    ],
+    "new_api_prefix": "/api/v1/ai",
+    "guardrails": [
+      "privacy_minimize_external_payload",
+      "server_side_business_rule_validation",
+      "explainable_outputs",
+      "no_secret_exposure"
+    ]
+  },
+  "agent_bootstrap": [
+    "Read AGENTS.md",
+    "Read README.md",
+    "Open target route/controller/model",
+    "Run minimal safe change"
+  ]
+}

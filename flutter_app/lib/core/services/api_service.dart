@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   static const String baseUrl = 'http://localhost:8000/api';
+  static const String _profilesKey = 'savedProfiles';
+  static const String _activeProfileKey = 'activeProfileKey';
   
   // Get stored token
   Future<String?> _getToken() async {
@@ -15,6 +17,60 @@ class ApiService {
   Future<void> _saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('token', token);
+  }
+
+  Future<List<Map<String, dynamic>>> _getProfiles() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_profilesKey);
+    if (raw == null || raw.isEmpty) return [];
+
+    final decoded = jsonDecode(raw);
+    if (decoded is! List) return [];
+
+    return decoded
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<void> _saveProfiles(List<Map<String, dynamic>> profiles) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_profilesKey, jsonEncode(profiles));
+  }
+
+  Future<void> _upsertActiveProfile(Map<String, dynamic> data, String token) async {
+    final familyId = (data['familyId'] ?? '').toString();
+    final memberId = (data['memberId'] ?? '').toString();
+    final mail = (data['mail'] ?? '').toString();
+
+    if (familyId.isEmpty || memberId.isEmpty || mail.isEmpty) return;
+
+    final profileKey = '$mail|$familyId|$memberId';
+    final profiles = await _getProfiles();
+    final profile = {
+      'profileKey': profileKey,
+      'mail': mail,
+      'familyId': familyId,
+      'memberId': memberId,
+      'familyTitle': (data['familyTitle'] ?? '').toString(),
+      'username': (data['username'] ?? '').toString(),
+      'memberType': (data['memberType'] ?? '').toString(),
+      'token': token,
+      'isFirstLogin': data['isFirstLogin'] ?? false,
+      'updatedAt': DateTime.now().toIso8601String(),
+    };
+
+    final index = profiles.indexWhere((p) => p['profileKey'] == profileKey);
+    if (index >= 0) {
+      profiles[index] = profile;
+    } else {
+      profiles.add(profile);
+    }
+
+    await _saveProfiles(profiles);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_activeProfileKey, profileKey);
   }
   
   // Get headers with token
@@ -56,6 +112,7 @@ class ApiService {
       final responseData = jsonDecode(response.body);
       if (responseData['token'] != null) {
         await _saveToken(responseData['token']);
+        await _upsertActiveProfile(responseData['data'] ?? {}, responseData['token']);
       }
       // Save user data
       final prefs = await SharedPreferences.getInstance();
@@ -63,9 +120,26 @@ class ApiService {
       await prefs.setString('memberType', responseData['data']['memberType'] ?? '');
       await prefs.setString('username', responseData['data']['username'] ?? '');
       await prefs.setString('familyTitle', responseData['data']['familyTitle'] ?? '');
+      await prefs.setString('familyId', responseData['data']['familyId'] ?? '');
+      await prefs.setString('memberId', responseData['data']['memberId'] ?? '');
+      await prefs.setString('memberMail', responseData['data']['mail'] ?? '');
       return responseData;
     } else {
       throw Exception(jsonDecode(response.body)['message'] ?? 'Login failed');
+    }
+  }
+
+  Future<List<dynamic>> getFamiliesByEmail(String mail) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/auth/families?mail=${Uri.encodeComponent(mail)}'),
+      headers: {'Content-Type': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data']?['families'] ?? [];
+    } else {
+      throw Exception(jsonDecode(response.body)['message'] ?? 'Failed to fetch families');
     }
   }
   
@@ -222,11 +296,123 @@ class ApiService {
   // Logout
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
+    await _clearCurrentSession(prefs, removeActiveProfile: true);
+  }
+
+  Future<void> logoutAllProfiles() async {
+    final prefs = await SharedPreferences.getInstance();
+    await _clearCurrentSession(prefs, removeActiveProfile: true);
+    await prefs.remove(_profilesKey);
+  }
+
+  Future<void> _clearCurrentSession(
+    SharedPreferences prefs, {
+    required bool removeActiveProfile,
+  }) async {
     await prefs.remove('token');
     await prefs.remove('user');
     await prefs.remove('username');
     await prefs.remove('familyTitle');
     await prefs.remove('isFirstLogin');
+    await prefs.remove('familyId');
+    await prefs.remove('memberId');
+    await prefs.remove('memberMail');
+    if (removeActiveProfile) {
+      await prefs.remove(_activeProfileKey);
+    }
+  }
+
+  Future<void> removeSavedProfile(String profileKey) async {
+    final profiles = await _getProfiles();
+    final activeKey = await getActiveProfileKey();
+
+    final updatedProfiles =
+        profiles.where((p) => p['profileKey']?.toString() != profileKey).toList();
+
+    await _saveProfiles(updatedProfiles);
+
+    final wasActiveProfile = activeKey == profileKey;
+    if (!wasActiveProfile) {
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    if (updatedProfiles.isEmpty) {
+      await _clearCurrentSession(prefs, removeActiveProfile: true);
+      return;
+    }
+
+    final fallbackProfileKey = updatedProfiles.last['profileKey']?.toString() ?? '';
+    if (fallbackProfileKey.isEmpty) {
+      await _clearCurrentSession(prefs, removeActiveProfile: true);
+      return;
+    }
+
+    await switchProfile(fallbackProfileKey);
+  }
+
+  Future<List<Map<String, dynamic>>> getSavedProfiles() async {
+    return _getProfiles();
+  }
+
+  Future<String?> getActiveProfileKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_activeProfileKey);
+  }
+
+  Future<Map<String, dynamic>?> getActiveProfile() async {
+    final activeKey = await getActiveProfileKey();
+    if (activeKey == null || activeKey.isEmpty) return null;
+
+    final profiles = await _getProfiles();
+    for (final profile in profiles) {
+      if (profile['profileKey']?.toString() == activeKey) {
+        return profile;
+      }
+    }
+    return null;
+  }
+
+  Future<void> reorderSavedProfiles(int oldIndex, int newIndex) async {
+    final profiles = await _getProfiles();
+    if (oldIndex < 0 || oldIndex >= profiles.length) return;
+    if (newIndex < 0 || newIndex > profiles.length) return;
+
+    if (newIndex > oldIndex) {
+      newIndex -= 1;
+    }
+
+    final item = profiles.removeAt(oldIndex);
+    profiles.insert(newIndex, item);
+    await _saveProfiles(profiles);
+  }
+
+  Future<bool> hasActiveSession() async {
+    final token = await _getToken();
+    return token != null && token.isNotEmpty;
+  }
+
+  Future<void> switchProfile(String profileKey) async {
+    final profiles = await _getProfiles();
+    final profile = profiles.cast<Map<String, dynamic>?>().firstWhere(
+      (p) => p?['profileKey'] == profileKey,
+      orElse: () => null,
+    );
+
+    if (profile == null) {
+      throw Exception('Profile not found');
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('token', profile['token']?.toString() ?? '');
+    await prefs.setString('username', profile['username']?.toString() ?? '');
+    await prefs.setString('familyTitle', profile['familyTitle']?.toString() ?? '');
+    await prefs.setString('memberType', profile['memberType']?.toString() ?? '');
+    await prefs.setString('familyId', profile['familyId']?.toString() ?? '');
+    await prefs.setString('memberId', profile['memberId']?.toString() ?? '');
+    await prefs.setString('memberMail', profile['mail']?.toString() ?? '');
+    await prefs.setBool('isFirstLogin', profile['isFirstLogin'] == true);
+    await prefs.setString(_activeProfileKey, profileKey);
   }
 
   // Deactivate Account
