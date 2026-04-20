@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/services/api_service.dart';
+import 'create_task_screen.dart';
 
 class TaskManagementScreen extends StatefulWidget {
   const TaskManagementScreen({super.key});
@@ -373,6 +374,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
     final notes = taskDetail['notes'] ?? '';
     final isMandatory = task?['is_mandatory'] ?? false;
     final assignmentApproved = taskDetail['assignment_approved'] ?? true;
+    final rewardType = (task?['reward_type'] ?? 'points').toString();
+    final moneyReward = ((task?['money_reward'] ?? 0) as num).toDouble();
 
     // Calculate if deadline is near or passed
     bool isDeadlineNear = false;
@@ -548,30 +551,10 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                       Row(
                         children: [
                           Expanded(
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green[50],
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Icon(Icons.star, color: Colors.amber[600], size: 18),
-                                ),
-                                const SizedBox(width: 8),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('Reward',
-                                        style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey[600])),
-                                    Text('+$assignedPoints pts',
-                                        style: GoogleFonts.poppins(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.green[700])),
-                                  ],
-                                ),
-                              ],
+                            child: _buildRewardChip(
+                              rewardType: rewardType,
+                              assignedPoints: assignedPoints,
+                              moneyReward: moneyReward,
                             ),
                           ),
                           if (penaltyPoints > 0)
@@ -796,7 +779,11 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            'Great job! You earned +$assignedPoints points!',
+                            _buildRewardCelebrationText(
+                              rewardType: rewardType,
+                              assignedPoints: assignedPoints,
+                              moneyReward: moneyReward,
+                            ),
                             style: GoogleFonts.poppins(
                               fontSize: 12, 
                               color: Colors.green[700],
@@ -842,6 +829,15 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
   }
 
   Future<void> _markTaskComplete(String taskDetailId) async {
+    final taskDetail = _myTasks.firstWhere(
+      (t) => t['_id'] == taskDetailId,
+      orElse: () => <String, dynamic>{},
+    );
+    final task = taskDetail['task_id'];
+    final rewardType = (task?['reward_type'] ?? 'points').toString();
+    final assignedPoints = ((taskDetail['assigned_points'] ?? 0) as num).toDouble();
+    final moneyReward = ((task?['money_reward'] ?? 0) as num).toDouble();
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -853,9 +849,37 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
             Text('Complete Task', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
           ],
         ),
-        content: Text(
-          'Are you sure you have completed this task? It will be sent to parent for approval.',
-          style: GoogleFonts.poppins(),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you have completed this task?',
+              style: GoogleFonts.poppins(),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green[200]!),
+              ),
+              child: Text(
+                _buildRewardSummaryLine(
+                  rewardType: rewardType,
+                  points: assignedPoints,
+                  money: moneyReward,
+                ),
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.green[800],
+                ),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -874,7 +898,11 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
 
     if (confirm == true) {
       try {
-        await _apiService.completeTask(taskDetailId);
+        final response = await _apiService.completeTask(taskDetailId);
+        final rewardSummary = response['data']?['rewardSummary'];
+        if (mounted && rewardSummary is Map<String, dynamic>) {
+          await _showRewardAppliedDialog(rewardSummary);
+        }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -882,7 +910,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                 children: [
                   Icon(Icons.check_circle, color: Colors.white),
                   SizedBox(width: 10),
-                  Text('Task marked as completed! Waiting for approval.'),
+                  Text('Task completed and rewards added!'),
                 ],
               ),
               backgroundColor: Colors.green,
@@ -898,6 +926,152 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
         }
       }
     }
+  }
+
+  Widget _buildRewardChip({
+    required String rewardType,
+    required int assignedPoints,
+    required double moneyReward,
+  }) {
+    String title = 'Reward';
+    String value = '+$assignedPoints pts';
+    IconData icon = Icons.star;
+    Color iconColor = Colors.amber[700]!;
+
+    if (rewardType == 'money') {
+      title = 'Money Reward';
+      value = '+${moneyReward.toStringAsFixed(2)} EGP';
+      icon = Icons.payments;
+      iconColor = Colors.teal;
+    } else if (rewardType == 'both') {
+      title = 'Mixed Reward';
+      value = '+$assignedPoints pts + ${moneyReward.toStringAsFixed(2)} EGP';
+      icon = Icons.auto_awesome;
+      iconColor = Colors.deepPurple;
+    }
+
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Colors.green[50],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: iconColor, size: 18),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey[600])),
+              Text(
+                value,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green[700],
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _buildRewardCelebrationText({
+    required String rewardType,
+    required int assignedPoints,
+    required double moneyReward,
+  }) {
+    if (rewardType == 'money') {
+      return 'Great job! You earned +${moneyReward.toStringAsFixed(2)} EGP!';
+    }
+    if (rewardType == 'both') {
+      return 'Great job! You earned +$assignedPoints points and +${moneyReward.toStringAsFixed(2)} EGP!';
+    }
+    return 'Great job! You earned +$assignedPoints points!';
+  }
+
+  String _buildRewardSummaryLine({
+    required String rewardType,
+    required double points,
+    required double money,
+  }) {
+    if (rewardType == 'money') {
+      return 'Reward on completion: ${money.toStringAsFixed(2)} EGP';
+    }
+    if (rewardType == 'both') {
+      return 'Reward on completion: ${points.toStringAsFixed(0)} pts + ${money.toStringAsFixed(2)} EGP';
+    }
+    return 'Reward on completion: ${points.toStringAsFixed(0)} pts';
+  }
+
+  Future<void> _showRewardAppliedDialog(Map<String, dynamic> rewardSummary) async {
+    final points = ((rewardSummary['points_awarded'] ?? 0) as num).toDouble();
+    final money = ((rewardSummary['money_awarded'] ?? 0) as num).toDouble();
+    final type = (rewardSummary['reward_type'] ?? 'points').toString();
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text('Rewards Added', style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (type == 'points' || type == 'both')
+                  TweenAnimationBuilder<double>(
+                    duration: const Duration(milliseconds: 400),
+                    tween: Tween(begin: 0.8, end: 1),
+                    curve: Curves.easeOutBack,
+                    builder: (context, value, child) => Transform.scale(scale: value, child: child),
+                    child: Column(
+                      children: [
+                        const Text('⭐', style: TextStyle(fontSize: 30)),
+                        Text('+${points.toStringAsFixed(0)}', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                if (type == 'both') const SizedBox(width: 20),
+                if (type == 'money' || type == 'both')
+                  TweenAnimationBuilder<double>(
+                    duration: const Duration(milliseconds: 500),
+                    tween: Tween(begin: 0.8, end: 1),
+                    curve: Curves.easeOutBack,
+                    builder: (context, value, child) => Transform.scale(scale: value, child: child),
+                    child: Column(
+                      children: [
+                        const Text('💰', style: TextStyle(fontSize: 30)),
+                        Text('+${money.toStringAsFixed(2)}', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _buildRewardSummaryLine(rewardType: type, points: points, money: money),
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Nice!', style: GoogleFonts.poppins()),
+          ),
+        ],
+      ),
+    );
   }
 
   Color _getPriorityColor(int priority) {
@@ -1383,7 +1557,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: _showCreateTaskTemplateDialog,
+                  onPressed: _openCreateTaskScreen,
                   icon: const Icon(Icons.add, color: Colors.white),
                   label: Text('Create Task Template',
                       style: GoogleFonts.poppins(
@@ -1438,6 +1612,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                     final task = _taskTemplates[index];
                     final category = task['category_id'];
                     final isMandatory = task['is_mandatory'] ?? false;
+                    final templateRewardType = (task['reward_type'] ?? 'points').toString();
+                    final templateMoneyReward = ((task['money_reward'] ?? 0) as num).toDouble();
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -1524,6 +1700,31 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                                     ),
                                   ],
                                 ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Text(
+                                      templateRewardType == 'money'
+                                          ? '💰'
+                                          : templateRewardType == 'both'
+                                              ? '⭐💰'
+                                              : '⭐',
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      templateRewardType == 'money'
+                                          ? '${templateMoneyReward.toStringAsFixed(2)} EGP'
+                                          : templateRewardType == 'both'
+                                              ? '${templateMoneyReward.toStringAsFixed(2)} EGP + points on assignment'
+                                              : 'Points on assignment',
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 11,
+                                          color: Colors.green[700],
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
                               ],
                             ),
                           ),
@@ -1541,6 +1742,19 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
         ),
       ],
     );
+  }
+
+  Future<void> _openCreateTaskScreen() async {
+    final created = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreateTaskScreen(categories: _categories),
+      ),
+    );
+
+    if (created == true) {
+      _loadData();
+    }
   }
 
   void _showCreateTaskTemplateDialog() {

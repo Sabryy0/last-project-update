@@ -24,11 +24,14 @@ import 'pages/inventory_alerts_screen.dart';
 import 'pages/groceries_screen.dart';
 import 'pages/grocery_list_detail_screen.dart';
 import 'pages/family_map_screen.dart';
+import 'pages/wallet/combined_wallet_screen.dart';
+import 'pages/analytics/combined_analytics_screen.dart';
 import 'core/services/api_service.dart';
 import 'core/services/locale_service.dart';
 import 'package:provider/provider.dart';
 import 'package:app_frontend/pages/budget/budget_provider.dart';
 import 'package:app_frontend/pages/budget/budget_dashboard_screen.dart';
+import 'package:app_frontend/pages/budget/event_funding_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -95,7 +98,10 @@ class MyApp extends StatelessWidget {
               '/groceries': (context) => const GroceriesScreen(),
               '/grocery-list-detail': (context) => const GroceryListDetailScreen(),
               '/budget': (context) => const BudgetDashboardScreen(),
+              '/event-funding': (context) => const EventFundingScreen(),
               '/family-map': (context) => const FamilyMapScreen(),
+              '/combined-wallet': (context) => const CombinedWalletScreen(),
+              '/combined-analytics': (context) => const CombinedAnalyticsScreen(),
             },
           );
         },

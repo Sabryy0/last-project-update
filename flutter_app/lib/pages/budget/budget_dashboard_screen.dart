@@ -49,7 +49,7 @@ class _BudgetDashboardScreenState extends State<BudgetDashboardScreen> {
             ),
           ),
           floatingActionButton: FloatingActionButton.extended(
-            onPressed: () => _showCreateBudgetSheet(context, provider),
+            onPressed: () async => await _showCreateBudgetSheet(context, provider),
             backgroundColor: const Color(0xFF388E3C),
             icon: const Icon(Icons.add, color: Colors.white),
             label: const Text('New Budget', style: TextStyle(color: Colors.white)),
@@ -74,6 +74,10 @@ class _BudgetDashboardScreenState extends State<BudgetDashboardScreen> {
           const Expanded(
             child: Text('Budget', style: TextStyle(
               fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+          ),
+          IconButton(
+            onPressed: () => Navigator.pushNamed(context, '/combined-analytics'),
+            icon: const Icon(Icons.analytics_outlined, color: Colors.white),
           ),
           IconButton(
             onPressed: () => Navigator.push(context, MaterialPageRoute(
@@ -134,7 +138,7 @@ class _BudgetDashboardScreenState extends State<BudgetDashboardScreen> {
               style: TextStyle(color: Color(0xFF757575))),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: () => _showCreateBudgetSheet(context, provider),
+            onPressed: () async => await _showCreateBudgetSheet(context, provider),
             icon: const Icon(Icons.add),
             label: const Text('Create Budget'),
             style: ElevatedButton.styleFrom(
@@ -166,7 +170,15 @@ class _BudgetDashboardScreenState extends State<BudgetDashboardScreen> {
     final emergencyTotal = (budget['emergency_fund_amount'] ?? 0).toDouble();
     final emergencySpent = (budget['emergency_fund_spent'] ?? 0).toDouble();
     final isOverBudget = budget['is_over_budget'] == true;
-    final isHousehold = budget['budget_type'] == 'household';
+    final periodType = (budget['period_type'] ?? budget['budget_type'] ?? 'monthly').toString();
+    final periodLabel = switch (periodType) {
+      'weekly' => 'Weekly',
+      'monthly' => 'Monthly',
+      'yearly' => 'Yearly',
+      'custom' => 'Custom',
+      _ => periodType,
+    };
+    final isHousehold = (budget['budget_type'] ?? 'household').toString() != 'personal';
     final categories = List<Map<String, dynamic>>.from(budget['categories'] ?? []);
 
     return Card(
@@ -197,7 +209,7 @@ class _BudgetDashboardScreenState extends State<BudgetDashboardScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  isHousehold ? 'Household' : 'Personal',
+                  periodLabel,
                   style: TextStyle(
                     fontSize: 11,
                     color: isHousehold ? const Color(0xFF388E3C) : const Color(0xFF1976D2),
@@ -322,24 +334,44 @@ class _BudgetDashboardScreenState extends State<BudgetDashboardScreen> {
     }
   }
 
-  void _showCreateBudgetSheet(BuildContext context, FamilyBudgetProvider provider) {
+  Future<void> _showCreateBudgetSheet(BuildContext context, FamilyBudgetProvider provider) async {
+    await provider.loadReferenceData();
+
     final titleCtrl = TextEditingController(text: 'Family Budget');
     final totalCtrl = TextEditingController();
     String periodType = 'monthly';
-    String budgetType = 'household';
     double emergencyPct = 10;
     bool isLoading = false;
-    List<Map<String, dynamic>> categories = [
-      {'name': 'Food & Groceries', 'allocated_amount': 0.0, 'is_essential': true,
-       'linked_food_module': true, 'color': '#4CAF50'},
-      {'name': 'Transport', 'allocated_amount': 0.0, 'is_essential': false,
-       'linked_food_module': false, 'color': '#FF9800'},
-      {'name': 'Education', 'allocated_amount': 0.0, 'is_essential': false,
-       'linked_food_module': false, 'color': '#2196F3'},
-      {'name': 'Children Rewards', 'allocated_amount': 0.0, 'is_essential': false,
-       'linked_reward_module': true, 'color': '#9C27B0'},
-    ];
-    final catControllers = categories.map((_) => TextEditingController()).toList();
+
+    final categories = provider.inventoryCategories.map((category) {
+      return {
+        'inventory_category_id': category['_id']?.toString(),
+        'name': (category['title'] ?? 'Uncategorized').toString(),
+        'allocated_amount': 0.0,
+        'threshold_percentage': 15.0,
+        'color': '#4CAF50',
+      };
+    }).toList();
+
+    final categoryControllers = categories.map((_) => TextEditingController()).toList();
+    final allowanceControllers = provider.familyMembers.map((member) {
+      return {
+        'member_id': member['_id']?.toString(),
+        'member_mail': (member['mail'] ?? '').toString(),
+        'name': (member['username'] ?? member['mail'] ?? 'Member').toString(),
+        'moneyCtrl': TextEditingController(),
+      };
+    }).toList();
+
+    if (provider.inventoryCategories.isEmpty || provider.familyMembers.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Loading family inventories and members...')),
+        );
+      }
+    }
+
+    if (!context.mounted) return;
 
     showModalBottomSheet(
       context: context,
@@ -367,7 +399,7 @@ class _BudgetDashboardScreenState extends State<BudgetDashboardScreen> {
                     borderRadius: BorderRadius.circular(2)),
               )),
               const SizedBox(height: 16),
-              const Text('Create Budget',
+                const Text('Create Budget',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
               const SizedBox(height: 20),
               TextField(
@@ -389,22 +421,11 @@ class _BudgetDashboardScreenState extends State<BudgetDashboardScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              // Budget type
-              const Text('Budget Type', style: TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Row(children: [
-                Expanded(child: _typeChip(ctx, 'Household', 'household', budgetType,
-                    (v) => setSheet(() => budgetType = v))),
-                const SizedBox(width: 8),
-                Expanded(child: _typeChip(ctx, 'Personal', 'personal', budgetType,
-                    (v) => setSheet(() => budgetType = v))),
-              ]),
-              const SizedBox(height: 16),
               // Period type
               const Text('Period', style: TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               Row(children: [
-                for (final p in ['weekly', 'monthly', 'custom'])
+                for (final p in ['weekly', 'monthly', 'yearly'])
                   Expanded(child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 2),
                     child: _typeChip(ctx, p.capitalize(), p, periodType,
@@ -424,42 +445,126 @@ class _BudgetDashboardScreenState extends State<BudgetDashboardScreen> {
               ),
               const SizedBox(height: 16),
               // Categories
-              const Text('Budget Categories',
+              const Text('Inventory Categories',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              ...List.generate(categories.length, (i) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Row(children: [
-                  Container(
-                    width: 16, height: 16,
-                    decoration: BoxDecoration(
-                      color: _parseColor(categories[i]['color']),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(categories[i]['name'],
-                      style: const TextStyle(fontWeight: FontWeight.w500))),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 100,
-                    child: TextField(
-                      controller: catControllers[i],
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Amount',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              if (categories.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('No inventory categories found. Create categories in Inventory first.'),
+                )
+              else
+                ...List.generate(categories.length, (i) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(children: [
+                    Container(
+                      width: 16, height: 16,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF4CAF50),
+                        shape: BoxShape.circle,
                       ),
-                      onChanged: (v) {
-                        categories[i]['allocated_amount'] = double.tryParse(v) ?? 0;
-                      },
                     ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text((categories[i]['name'] ?? '').toString(),
+                        style: const TextStyle(fontWeight: FontWeight.w500))),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 100,
+                      child: TextField(
+                        controller: categoryControllers[i],
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Amount',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        ),
+                        onChanged: (v) {
+                          categories[i]['allocated_amount'] = double.tryParse(v) ?? 0;
+                        },
+                      ),
+                    ),
+                  ]),
+                )),
+              const SizedBox(height: 16),
+              const Text('Current Inventory Snapshot',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              if (provider.familyInventoryItems.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('No inventory items found yet.'),
+                )
+              else
+                ...provider.familyInventoryItems.map((item) {
+                  final name = (item['item_name'] ?? 'Item').toString();
+                  final quantity = (item['quantity'] ?? 0).toString();
+                  final unit = item['unit'] is Map ? (item['unit']['unit_name'] ?? '').toString() : '';
+                  final categoryName = item['item_category'] is Map
+                      ? (item['item_category']['title'] ?? 'Uncategorized').toString()
+                      : 'Uncategorized';
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.inventory_2_outlined, size: 18, color: Color(0xFF4CAF50)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 2),
+                                Text('$categoryName • $quantity ${unit.isNotEmpty ? unit : ''}'.trim(),
+                                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              const SizedBox(height: 16),
+              const Text('Member Allowances',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              if (allowanceControllers.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('No family members found.'),
+                )
+              else
+                ...List.generate(allowanceControllers.length, (i) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(allowanceControllers[i]['name'] as String,
+                          style: const TextStyle(fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: allowanceControllers[i]['moneyCtrl'] as TextEditingController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Money allowance',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
                   ),
-                ]),
-              )),
+                )),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
@@ -472,17 +577,41 @@ class _BudgetDashboardScreenState extends State<BudgetDashboardScreen> {
                         const SnackBar(content: Text('Please enter a valid total amount')));
                       return;
                     }
+                    final endDate = switch (periodType) {
+                      'weekly' => DateTime.now().add(const Duration(days: 7)),
+                      'yearly' => DateTime.now().add(const Duration(days: 365)),
+                      _ => DateTime.now().add(const Duration(days: 30)),
+                    };
+
                     setSheet(() => isLoading = true);
                     try {
                       await provider.createBudget({
                         'title': titleCtrl.text.trim(),
-                        'budget_type': budgetType,
                         'period_type': periodType,
                         'start_date': DateTime.now().toIso8601String(),
+                        'end_date': endDate.toIso8601String(),
                         'total_amount': total,
-                        'emergency_fund_percentage': emergencyPct,
-                        'categories': categories
-                            .where((c) => c['allocated_amount'] > 0)
+                        'threshold_percentage': emergencyPct,
+                        'allocations': categories
+                          .where((c) => ((c['allocated_amount'] ?? 0) as num) > 0 && (c['inventory_category_id']?.toString().isNotEmpty ?? false))
+                            .map((c) => {
+                              'inventory_category_id': c['inventory_category_id'],
+                              'allocated_amount': c['allocated_amount'],
+                              'threshold_percentage': 15,
+                            })
+                            .toList(),
+                        'allowances': allowanceControllers
+                            .where((m) {
+                              final money = double.tryParse((m['moneyCtrl'] as TextEditingController).text.trim()) ?? 0;
+                              return money > 0;
+                            })
+                            .map((m) => {
+                              'member_id': m['member_id'],
+                              'member_mail': m['member_mail'],
+                              'period_type': periodType,
+                              'allowance_currency': 'money',
+                              'money_amount': double.tryParse((m['moneyCtrl'] as TextEditingController).text.trim()) ?? 0,
+                            })
                             .toList(),
                       });
                       if (ctx.mounted) Navigator.pop(ctx);

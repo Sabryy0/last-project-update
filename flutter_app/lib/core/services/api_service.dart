@@ -469,10 +469,57 @@ class ApiService {
     
     if (response.statusCode == 200 || response.statusCode == 201) {
       return jsonDecode(response.body);
+    } else if (response.statusCode == 409) {
+      // Allow caller to decide whether to force-create when budget warning appears.
+      return jsonDecode(response.body);
     } else {
       final errorData = jsonDecode(response.body);
       throw Exception(errorData['message'] ?? 'Failed to create task');
     }
+  }
+
+  // Get remaining amount in Tasks/Rewards budget category
+  Future<Map<String, dynamic>> getTaskRewardsBudgetStatus() async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/budgets'),
+      headers: headers,
+    );
+
+    if (response.statusCode != 200) {
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to load budgets');
+    }
+
+    final responseData = jsonDecode(response.body);
+    final budgets = (responseData['data']?['budgets'] ?? []) as List<dynamic>;
+
+    final tasksRewards = budgets.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).firstWhere(
+      (budget) =>
+          (budget['category_name'] ?? '').toString() == 'Tasks/Rewards' &&
+          (budget['is_active'] == true || budget['is_active'] == null),
+      orElse: () => <String, dynamic>{},
+    );
+
+    if (tasksRewards.isEmpty) {
+      return {
+        'found': false,
+        'remaining': 0.0,
+        'budget_amount': 0.0,
+        'spent_amount': 0.0,
+      };
+    }
+
+    final budgetAmount = ((tasksRewards['budget_amount'] ?? tasksRewards['total_amount'] ?? 0) as num).toDouble();
+    final spentAmount = ((tasksRewards['spent_amount'] ?? tasksRewards['total_spent'] ?? 0) as num).toDouble();
+    final remaining = double.parse((budgetAmount - spentAmount).toStringAsFixed(2));
+
+    return {
+      'found': true,
+      'remaining': remaining,
+      'budget_amount': budgetAmount,
+      'spent_amount': spentAmount,
+    };
   }
 
   // Delete task
@@ -554,7 +601,7 @@ class ApiService {
   Future<Map<String, dynamic>> completeTask(String taskDetailId) async {
     final headers = await _getHeaders();
     final response = await http.patch(
-      Uri.parse('$baseUrl/tasks/assignments/$taskDetailId/complete'),
+      Uri.parse('$baseUrl/tasks/$taskDetailId/complete'),
       headers: headers,
     );
     
@@ -701,25 +748,64 @@ class ApiService {
     
     if (response.statusCode == 200) {
       final responseData = jsonDecode(response.body);
-      return responseData['data']['redemptions'] ?? [];
+      return responseData['data']['pendingRedemptions'] ?? responseData['data']['redemptions'] ?? [];
     } else {
       throw Exception('Failed to load pending redemptions');
     }
   }
 
-  // Parent approve/reject redemption
-  Future<Map<String, dynamic>> parentApproveRedemption(String redeemId, bool approved, {String? note}) async {
+  // Get my wishlist items
+  Future<List<dynamic>> getMyWishlistItems() async {
     final headers = await _getHeaders();
-    final Map<String, dynamic> body = {'approved': approved};
-    if (note != null) body['note'] = note;
+    final response = await http.get(
+      Uri.parse('$baseUrl/wishlist/my-wishlist'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data']?['items'] ?? [];
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to load wishlist');
+  }
+
+  // Request redemption with money/points/split
+  Future<Map<String, dynamic>> requestRedemptionWithMoney(Map<String, dynamic> data) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/redeem/with-money'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to request redemption');
+  }
+
+  // Parent approve/reject redemption
+  Future<Map<String, dynamic>> parentApproveRedemption(String redeemId, bool approved, {String? note, bool forceApprove = false}) async {
+    final headers = await _getHeaders();
+    final Map<String, dynamic> body = {
+      'approved': approved,
+      if (forceApprove) 'force_approve': true,
+      if (note != null && note.isNotEmpty) 'rejection_reason': note,
+    };
     
     final response = await http.patch(
-      Uri.parse('$baseUrl/redeem/$redeemId/parent-approve'),
+      Uri.parse('$baseUrl/redeem/$redeemId/approve'),
       headers: headers,
       body: jsonEncode(body),
     );
     
     if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else if (response.statusCode == 409) {
       return jsonDecode(response.body);
     } else {
       final errorData = jsonDecode(response.body);
@@ -850,6 +936,239 @@ class ApiService {
   Future<String?> getMemberType() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('memberType');
+  }
+
+  // Get current member ID from active profile/session
+  Future<String?> getCurrentMemberId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final memberId = prefs.getString('memberId');
+    if (memberId == null || memberId.isEmpty) return null;
+    return memberId;
+  }
+
+  // Get current member mail from active profile/session
+  Future<String?> getCurrentMemberMail() async {
+    final prefs = await SharedPreferences.getInstance();
+    final memberMail = prefs.getString('memberMail');
+    if (memberMail == null || memberMail.isEmpty) return null;
+    return memberMail;
+  }
+
+  // ======================= COMBINED WALLET / BUDGET APIs =======================
+
+  Future<Map<String, dynamic>> getCombinedBalance({String? memberId}) async {
+    final headers = await _getHeaders();
+    final resolvedMemberId = memberId ?? await getCurrentMemberId();
+    if (resolvedMemberId == null || resolvedMemberId.isEmpty) {
+      throw Exception('Member ID not found');
+    }
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/budget/member/$resolvedMemberId/combined-balance'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data'] ?? <String, dynamic>{};
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to load combined balance');
+  }
+
+  Future<Map<String, dynamic>> convertMoneyToPoints(double amountMoney) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/budget/wallet/convert-to-points'),
+      headers: headers,
+      body: jsonEncode({'amount_money': amountMoney}),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to convert money to points');
+  }
+
+  Future<Map<String, dynamic>> convertPointsToMoney(double amountPoints) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/budget/wallet/convert-from-points'),
+      headers: headers,
+      body: jsonEncode({'amount_points': amountPoints}),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to convert points to money');
+  }
+
+  Future<List<dynamic>> getMemberPointHistory(String memberMail) async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/point-history/${Uri.encodeComponent(memberMail)}'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data']?['history'] ?? [];
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to load member point history');
+  }
+
+  // ======================= EVENT FUNDING APIs =======================
+
+  Future<Map<String, dynamic>> getEventFundingStatus(String eventId) async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/budget/events/$eventId/funding'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data'] ?? <String, dynamic>{};
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to load event funding status');
+  }
+
+  Future<Map<String, dynamic>> contributeToEvent(
+    String eventId, {
+    required String contributionType,
+    required num amount,
+    String paymentMode = 'pay_now',
+    String? memberId,
+    bool manualEntry = false,
+  }) async {
+    final headers = await _getHeaders();
+    final body = {
+      'contribution_type': contributionType,
+      'amount': amount,
+      'payment_mode': paymentMode,
+      if (memberId != null && memberId.isNotEmpty) 'member_id': memberId,
+      if (manualEntry) 'manual_entry': true,
+    };
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/budget/events/$eventId/contribute'),
+      headers: headers,
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to contribute to event');
+  }
+
+  Future<Map<String, dynamic>> redeemEventSpot({
+    required String eventId,
+    required num pointsToUse,
+  }) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/redeem/event-spot'),
+      headers: headers,
+      body: jsonEncode({
+        'event_id': eventId,
+        'points_to_use': pointsToUse,
+      }),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to redeem event spot');
+  }
+
+  Future<Map<String, dynamic>> markEventContributionPaid(
+    String eventId, {
+    required String memberId,
+    required String contributionType,
+    required num amount,
+  }) async {
+    final headers = await _getHeaders();
+    final response = await http.patch(
+      Uri.parse('$baseUrl/budget/events/$eventId/mark-paid'),
+      headers: headers,
+      body: jsonEncode({
+        'member_id': memberId,
+        'contribution_type': contributionType,
+        'amount': amount,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to mark contribution as paid');
+  }
+
+  Future<Map<String, dynamic>> adjustEventFundingGoal(String eventId, num estimatedCost) async {
+    final headers = await _getHeaders();
+    final response = await http.patch(
+      Uri.parse('$baseUrl/budget/events/$eventId/funding-goal'),
+      headers: headers,
+      body: jsonEncode({'estimated_cost': estimatedCost}),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to adjust funding goal');
+  }
+
+  // ======================= COMBINED ANALYTICS APIs =======================
+
+  Future<Map<String, dynamic>> getCombinedAnalytics() async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/budget/analytics'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data'] ?? <String, dynamic>{};
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to load combined analytics');
+  }
+
+  Future<Map<String, dynamic>> getTaskRewardsSummary({String period = 'monthly'}) async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$baseUrl/tasks/rewards-summary?period=$period'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data'] ?? <String, dynamic>{};
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to load task rewards summary');
   }
 
   // ======================= UNIT APIs =======================

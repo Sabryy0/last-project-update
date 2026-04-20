@@ -10,6 +10,8 @@ class TaskItem {
   bool isMandatory;
   String status;
   int points;
+  String rewardType;
+  double moneyReward;
   String? deadline;
   double progress;
   bool isSelectedToDelete;
@@ -21,6 +23,8 @@ class TaskItem {
     this.isMandatory = false,
     this.status = 'assigned',
     this.points = 0,
+    this.rewardType = 'points',
+    this.moneyReward = 0,
     this.deadline,
     this.progress = 0.0,
     this.isSelectedToDelete = false,
@@ -44,9 +48,27 @@ class TaskItem {
       isMandatory: json['task_id']?['is_mandatory'] ?? json['is_mandatory'] ?? false,
       status: status,
       points: json['assigned_points'] ?? 0,
+      rewardType: json['task_id']?['reward_type'] ?? json['reward_type'] ?? 'points',
+      moneyReward: ((json['task_id']?['money_reward'] ?? json['money_reward'] ?? 0) as num).toDouble(),
       deadline: json['deadline'],
       progress: progress,
     );
+  }
+
+  String get rewardLabel {
+    if (rewardType == 'money') {
+      return '${moneyReward.toStringAsFixed(2)} EGP';
+    }
+    if (rewardType == 'both') {
+      return '$points pts + ${moneyReward.toStringAsFixed(2)} EGP';
+    }
+    return '$points pts';
+  }
+
+  String get rewardEmoji {
+    if (rewardType == 'money') return '💰';
+    if (rewardType == 'both') return '⭐💰';
+    return '⭐';
   }
 }
 
@@ -448,6 +470,21 @@ class _TasksScreenState extends State<TasksScreen> with SingleTickerProviderStat
                               fontSize: 12,
                               color: Colors.grey,
                             ),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Text(task.rewardEmoji, style: const TextStyle(fontSize: 14)),
+                              const SizedBox(width: 6),
+                              Text(
+                                task.rewardLabel,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.green[700],
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),

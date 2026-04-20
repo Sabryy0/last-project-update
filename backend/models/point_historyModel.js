@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const pointDetailsSchema = new mongoose.Schema({
+const pointHistorySchema = new mongoose.Schema({
   wallet_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'PointWallet',
@@ -22,7 +22,7 @@ const pointDetailsSchema = new mongoose.Schema({
   reason_type: {
     type: String,
     required: [true, 'Please provide the reason type'],
-    enum: ['task_completion', 'penalty', 'redeem', 'bonus', 'adjustment', 'manual_grant']
+    enum: ['task_completion', 'penalty', 'redeem', 'bonus', 'adjustment', 'manual_grant', 'conversion']
   },
   task_id: {
     type: mongoose.Schema.Types.ObjectId,
@@ -47,10 +47,10 @@ const pointDetailsSchema = new mongoose.Schema({
 });
 
 // Indexes for faster queries
-pointDetailsSchema.index({ wallet_id: 1, createdAt: -1 });
-pointDetailsSchema.index({ member_mail: 1, family_id: 1, createdAt: -1 });
-pointDetailsSchema.index({ granted_by: 1 });
+pointHistorySchema.index({ wallet_id: 1, createdAt: -1 });
+pointHistorySchema.index({ member_mail: 1, family_id: 1, createdAt: -1 });
+pointHistorySchema.index({ granted_by: 1 });
 
-const PointDetails = mongoose.model('PointDetails', pointDetailsSchema);
+const PointHistory = mongoose.models.PointHistory || mongoose.model('PointHistory', pointHistorySchema);
 
-module.exports = PointDetails;
+module.exports = PointHistory;

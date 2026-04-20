@@ -14,6 +14,9 @@ class FamilyBudgetProvider extends ChangeNotifier {
   List<Map<String, dynamic>> budgets = [];
   List<Map<String, dynamic>> expenses = [];
   List<Map<String, dynamic>> futureEvents = [];
+  List<Map<String, dynamic>> inventoryCategories = [];
+  List<Map<String, dynamic>> familyInventoryItems = [];
+  List<Map<String, dynamic>> familyMembers = [];
   Map<String, dynamic>? selectedBudget;
   Map<String, dynamic>? analyticsData;
 
@@ -25,6 +28,7 @@ class FamilyBudgetProvider extends ChangeNotifier {
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     isParentUser = (prefs.getString('memberType') ?? '') == 'Parent';
+    await loadReferenceData();
     await loadBudgets();
     await loadFutureEvents();
   }
@@ -49,18 +53,72 @@ class FamilyBudgetProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Map<String, dynamic> _normalizeBudget(Map<String, dynamic> budget) {
+    final allocations = List<Map<String, dynamic>>.from(budget['allocations'] ?? []);
+    return {
+      ...budget,
+      'budget_type': budget['budget_type'] ?? 'household',
+      'period_type': budget['period_type'] ?? 'monthly',
+      'total_spent': (budget['spent_amount'] ?? budget['total_spent'] ?? 0),
+      'remaining_amount': (budget['remaining_amount'] ?? ((budget['total_amount'] ?? 0) - (budget['spent_amount'] ?? 0))),
+      'emergency_fund_amount': budget['emergency_fund_amount'] ?? 0,
+      'emergency_fund_spent': budget['emergency_fund_spent'] ?? 0,
+      'categories': allocations.map((allocation) {
+        final category = allocation['inventory_category_id'];
+        final title = category is Map ? (category['title'] ?? 'Uncategorized') : 'Uncategorized';
+        return {
+          'name': title,
+          'allocated_amount': allocation['allocated_amount'] ?? 0,
+          'spent_amount': allocation['spent_amount'] ?? 0,
+          'threshold_percentage': allocation['threshold_percentage'] ?? 15,
+          'color': '#4CAF50',
+        };
+      }).toList(),
+    };
+  }
+
+  Future<void> loadReferenceData() async {
+    try {
+      final headers = await _headers();
+      final results = await Future.wait([
+        http.get(Uri.parse('$_baseUrl/inventory-categories'), headers: headers),
+        http.get(Uri.parse('$_baseUrl/inventory/all-items'), headers: headers),
+        http.get(Uri.parse('$_baseUrl/members'), headers: headers),
+      ]);
+
+      if (results[0].statusCode == 200) {
+        final data = jsonDecode(results[0].body);
+        inventoryCategories = List<Map<String, dynamic>>.from(data['data']['categories'] ?? []);
+      }
+
+      if (results[1].statusCode == 200) {
+        final data = jsonDecode(results[1].body);
+        familyInventoryItems = List<Map<String, dynamic>>.from(data['data']['items'] ?? []);
+      }
+
+      if (results[2].statusCode == 200) {
+        final data = jsonDecode(results[2].body);
+        familyMembers = List<Map<String, dynamic>>.from(data['data']['members'] ?? []);
+      }
+
+      notifyListeners();
+    } catch (_) {}
+  }
+
   // ── Budgets ────────────────────────────────────────────────────────────────
   Future<void> loadBudgets() async {
     _setLoading(true);
     _setError(null);
     try {
       final res = await http.get(
-        Uri.parse('$_baseUrl/budgets'),
+        Uri.parse('$_baseUrl/budget/periods'),
         headers: await _headers(),
       );
       final data = jsonDecode(res.body);
       if (res.statusCode == 200) {
-        budgets = List<Map<String, dynamic>>.from(data['data']['budgets'] ?? []);
+        budgets = List<Map<String, dynamic>>.from(data['data']['period_budgets'] ?? [])
+            .map((budget) => _normalizeBudget(Map<String, dynamic>.from(budget)))
+            .toList();
       } else {
         _setError(data['message'] ?? 'Failed to load budgets');
       }
@@ -72,17 +130,59 @@ class FamilyBudgetProvider extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>> createBudget(Map<String, dynamic> payload) async {
-    final res = await http.post(
-      Uri.parse('$_baseUrl/budgets'),
-      headers: await _headers(),
-      body: jsonEncode(payload),
+    final headers = await _headers();
+
+    final periodResponse = await http.post(
+      Uri.parse('$_baseUrl/budget/periods'),
+      headers: headers,
+      body: jsonEncode({
+        'title': payload['title'],
+        'period_type': payload['period_type'] ?? 'monthly',
+        'start_date': payload['start_date'] ?? DateTime.now().toIso8601String(),
+        'end_date': payload['end_date'] ?? DateTime.now().add(const Duration(days: 30)).toIso8601String(),
+        'total_amount': payload['total_amount'],
+        'currency': payload['currency'] ?? 'EGP',
+        'threshold_percentage': payload['threshold_percentage'] ?? 15,
+      }),
     );
-    final data = jsonDecode(res.body);
-    if (res.statusCode == 201) {
-      await loadBudgets();
-      return data['data']['budget'];
+
+    final periodData = jsonDecode(periodResponse.body);
+    if (periodResponse.statusCode != 201) {
+      throw Exception(periodData['message'] ?? 'Failed to create budget');
     }
-    throw Exception(data['message'] ?? 'Failed to create budget');
+
+    final periodBudget = Map<String, dynamic>.from(periodData['data']['period_budget'] ?? {});
+    final periodId = periodBudget['_id']?.toString();
+
+    final allocations = List<Map<String, dynamic>>.from(payload['allocations'] ?? []);
+    if (periodId != null && periodId.isNotEmpty && allocations.isNotEmpty) {
+      final allocationResponse = await http.put(
+        Uri.parse('$_baseUrl/budget/periods/$periodId/allocations'),
+        headers: headers,
+        body: jsonEncode({'allocations': allocations}),
+      );
+      if (allocationResponse.statusCode != 200) {
+        final allocationData = jsonDecode(allocationResponse.body);
+        throw Exception(allocationData['message'] ?? 'Failed to save budget allocations');
+      }
+    }
+
+    final allowances = List<Map<String, dynamic>>.from(payload['allowances'] ?? []);
+    if (periodId != null && periodId.isNotEmpty && allowances.isNotEmpty) {
+      final allowanceResponse = await http.put(
+        Uri.parse('$_baseUrl/budget/periods/$periodId/allowances'),
+        headers: headers,
+        body: jsonEncode({'allowances': allowances}),
+      );
+      if (allowanceResponse.statusCode != 200) {
+        final allowanceData = jsonDecode(allowanceResponse.body);
+        throw Exception(allowanceData['message'] ?? 'Failed to save member allowances');
+      }
+    }
+
+    await loadReferenceData();
+    await loadBudgets();
+    return _normalizeBudget(periodBudget);
   }
 
   Future<void> updateBudget(String budgetId, Map<String, dynamic> payload) async {

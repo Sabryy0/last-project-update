@@ -6,6 +6,7 @@ class FutureEventCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final Function(double) onUpdateSaved;
+  final VoidCallback? onOpenFunding;
 
   const FutureEventCard({
     super.key,
@@ -13,6 +14,7 @@ class FutureEventCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onUpdateSaved,
+    this.onOpenFunding,
   });
 
   @override
@@ -129,6 +131,17 @@ class FutureEventCard extends StatelessWidget {
                     ),
                   ),
                 ]),
+              ),
+            ],
+            if (onOpenFunding != null) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onOpenFunding,
+                  icon: const Icon(Icons.account_balance_wallet_outlined),
+                  label: const Text('Open Funding Details'),
+                ),
               ),
             ],
           ]),

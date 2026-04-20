@@ -28,6 +28,12 @@ A comprehensive family management application that enables parents to assign tas
 
 This system helps families organize household tasks and motivate children through a gamified rewards system. Parents can create tasks, assign them to family members, and award points upon completion. Children can accumulate points and redeem them for rewards from their wishlist.
 
+### Key Features
+- **Multi-Family Auth**: Same email can have multiple family accounts
+- **Arabic/RTL Support**: Full internationalization with Arabic and English
+- **Budget Module**: Expense tracking, analytics, and budget planning
+- **Profile Switching**: Instagram-style multi-profile support
+
 Quick context for AI agents and new contributors: see [AGENTS.md](AGENTS.md) and [PROJECT_CONTEXT.json](PROJECT_CONTEXT.json).
 
 ---
@@ -52,6 +58,13 @@ Quick context for AI agents and new contributors: see [AGENTS.md](AGENTS.md) and
 - 🎁 Wishlist management
 - 🏆 Redeem points for rewards
 
+### Budget Management
+- 💵 Track family expenses by category
+- 📊 Budget analytics and spending charts
+- 🎯 Set budget goals for expense categories
+- 📅 Plan future events and expenses
+- 💾 Emergency fund tracking
+
 ---
 
 ## 🛠️ Tech Stack
@@ -66,25 +79,9 @@ Quick context for AI agents and new contributors: see [AGENTS.md](AGENTS.md) and
 | **JWT** | Authentication |
 | **bcrypt** | Password hashing |
 | **Nodemailer** | Email service |
-
-### Flutter App (Mobile & Desktop)
-| Technology | Purpose |
-|------------|---------|
-| **Flutter 3.5+** | UI framework |
-| **Dart** | Programming language |
-| **go_router** | Navigation |
-| **Provider** | State management |
-| **http** | API calls |
-| **shared_preferences** | Local storage |
-
-### React App (Web)
-| Technology | Purpose |
-|------------|---------|
-| **React** | UI library |
-| **JavaScript** | Programming language |
-
----
-
+| **date-fns** | Date manipulation & formatting |
+| **fl_chart** | Budget analytics charts |
+| **intl 0.19.0** | Internationalization & localization |
 ## 📁 Project Structure
 
 ```
@@ -281,7 +278,8 @@ This project includes pre-configured VS Code tasks to run common commands quickl
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
 | POST | `/api/auth/signup` | Register new family account | Public |
-| POST | `/api/auth/login` | User login | Public |
+| POST | `/api/auth/login` | User login (multi-family support) | Public |
+| GET | `/api/auth/families` | Get families by email | Public |
 | POST | `/api/auth/setPassword` | Set/Change password | Protected |
 | POST | `/api/auth/forgotPassword` | Request password reset | Parent only |
 | PATCH | `/api/auth/resetPassword/:token` | Reset password with token | Parent only |
@@ -311,6 +309,17 @@ This project includes pre-configured VS Code tasks to run common commands quickl
 | GET | `/api/wishlist` | Get wishlist items |
 | POST | `/api/wishlist` | Add wishlist item |
 | POST | `/api/redeem` | Redeem points for reward |
+
+### Budget Management
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/budget/summary` | Get budget summary |
+| POST | `/api/budget/expense` | Add expense |
+| GET | `/api/budget/expenses` | Get all expenses |
+| GET | `/api/budget/analytics` | Get expense analytics |
+| POST | `/api/budget/goals` | Set budget goals |
+| GET | `/api/budget/future-events` | Get planned events |
+| POST | `/api/budget/future-events` | Create future event |
 
 ---
 
@@ -346,6 +355,9 @@ Create a `.env` file in the `backend/` folder:
 - **Wishlist** - Items members want to redeem
 - **WishlistCategory** - Categories for wishlist items
 - **Redeem** - Record of redeemed rewards
+- **Budget** - Budget accounts and settings
+- **Expense** - Recorded expenses with categories
+- **FutureEvent** - Planned expenses and events
 
 ---
 
@@ -361,7 +373,8 @@ Create a `.env` file in the `backend/` folder:
 
 ## 👥 Contributors
 
-- **Your Name** - *Full Stack Developer* - [GitHub](https://github.com/yourusername)
+- **Samia Ossairy** - *Full Stack Developer* - [GitHub](https://github.com/SamiaOssairy)
+- **Hab1ba8** - *Budget Module & App Fixes* - [GitHub](https://github.com/Hab1ba8)
 
 ---
 

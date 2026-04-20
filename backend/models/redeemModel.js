@@ -1,6 +1,16 @@
 const mongoose = require('mongoose');
 
 const redeemSchema = new mongoose.Schema({
+  family_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'FamilyAccount',
+    default: null
+  },
+  member_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Member',
+    default: null
+  },
   requester: {
     type: String,
     required: [true, 'Please provide the requester email'],
@@ -34,9 +44,47 @@ const redeemSchema = new mongoose.Schema({
     required: [true, 'Please provide the point deduction amount'],
     min: [0, 'Point deduction cannot be negative']
   },
+  payment_method: {
+    type: String,
+    enum: ['points', 'money', 'mixed'],
+    default: 'points'
+  },
+  points_used: {
+    type: Number,
+    default: 0,
+    min: [0, 'Points used cannot be negative']
+  },
+  money_used: {
+    type: Number,
+    default: 0,
+    min: [0, 'Money used cannot be negative']
+  },
+  points_deducted: {
+    type: Boolean,
+    default: false
+  },
+  money_deducted: {
+    type: Boolean,
+    default: false
+  },
   wishlist_item_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'WishlistItem',
+    default: null
+  },
+  linked_expense_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Expense',
+    default: null
+  },
+  linked_wallet_transaction_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'WalletTransaction',
+    default: null
+  },
+  linked_event_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'FutureEvent',
     default: null
   },
   requested_at: {

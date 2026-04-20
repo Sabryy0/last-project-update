@@ -5,6 +5,108 @@ const TaskDetails = require("../models/task_historyModel");
 const TaskCategory = require("../models/task_categoryModel");
 const Member = require("../models/MemberModel");
 const MemberType = require("../models/MemberTypeModel");
+const Budget = require("../models/budgetModel");
+const PointWallet = require("../models/point_walletModel");
+const PointHistory = require("../models/point_historyModel");
+const MemberWallet = require("../models/memberWalletModel");
+const WalletTransaction = require("../models/walletTransactionModel");
+
+const TASKS_REWARDS_CATEGORY = "Tasks/Rewards";
+
+const ensurePointWallet = async (memberMail, familyId) => {
+  let wallet = await PointWallet.findOne({ member_mail: memberMail, family_id: familyId });
+  if (!wallet) {
+    wallet = await PointWallet.create({
+      member_mail: memberMail,
+      family_id: familyId,
+      total_points: 0,
+    });
+  }
+  return wallet;
+};
+
+const ensureMoneyWallet = async (memberMail, familyId) => {
+  let wallet = await MemberWallet.findOne({ member_mail: memberMail, family_id: familyId });
+  if (!wallet) {
+    wallet = await MemberWallet.create({
+      member_mail: memberMail,
+      family_id: familyId,
+      balance: 0,
+    });
+  }
+  return wallet;
+};
+
+const applyTaskRewards = async ({ task, taskDetail, familyId, actorMail }) => {
+  const rewardType = task.reward_type || "points";
+  const pointReward = rewardType === "points" || rewardType === "both" ? Number(taskDetail.assigned_points || 0) : 0;
+  const moneyReward = rewardType === "money" || rewardType === "both" ? Number(task.money_reward || 0) : 0;
+
+  let pointWallet = null;
+  let moneyWallet = null;
+  let pointHistory = null;
+  let walletTransaction = null;
+  let budgetAfterUpdate = null;
+
+  if (pointReward > 0) {
+    pointWallet = await ensurePointWallet(taskDetail.member_mail, familyId);
+    pointWallet.total_points = Number((pointWallet.total_points + pointReward).toFixed(2));
+    pointWallet.last_update = new Date();
+    await pointWallet.save();
+
+    pointHistory = await PointHistory.create({
+      wallet_id: pointWallet._id,
+      member_mail: taskDetail.member_mail,
+      family_id: familyId,
+      points_amount: pointReward,
+      reason_type: "task_completion",
+      task_id: taskDetail.task_id,
+      granted_by: actorMail,
+      description: `Task completed: ${task.title}`,
+    });
+  }
+
+  if (moneyReward > 0) {
+    moneyWallet = await ensureMoneyWallet(taskDetail.member_mail, familyId);
+    moneyWallet.balance = Number((moneyWallet.balance + moneyReward).toFixed(2));
+    moneyWallet.last_update = new Date();
+    await moneyWallet.save();
+
+    walletTransaction = await WalletTransaction.create({
+      family_id: familyId,
+      member_mail: taskDetail.member_mail,
+      member_wallet_id: moneyWallet._id,
+      amount: moneyReward,
+      transaction_type: "deposit",
+      description: `Task completed: ${task.title}`,
+      conversion_type: "none",
+      converted_amount: moneyReward,
+      conversion_rate: 1,
+      linked_point_transaction_id: pointHistory ? pointHistory._id : null,
+    });
+
+    const budget = await Budget.findOne({ family_id: familyId, category_name: TASKS_REWARDS_CATEGORY, is_active: true });
+    if (budget) {
+      budget.spent_amount = Number((Number(budget.spent_amount || 0) + moneyReward).toFixed(2));
+      await budget.save();
+      budgetAfterUpdate = budget;
+    }
+
+    task.paid_to_wallet = true;
+    await task.save();
+  }
+
+  return {
+    reward_type: rewardType,
+    points_awarded: pointReward,
+    money_awarded: moneyReward,
+    point_wallet: pointWallet,
+    money_wallet: moneyWallet,
+    point_history: pointHistory,
+    wallet_transaction: walletTransaction,
+    budget: budgetAfterUpdate,
+  };
+};
 // Anyone can create tasks and assign to anyone
 // Non-parent assignments need parent approval
 // Child marks complete → Parent approves → Points auto-awarded
@@ -13,7 +115,7 @@ const MemberType = require("../models/MemberTypeModel");
 //========================================================================================
 // Create a new task template
 exports.createTask = catchAsync(async (req, res, next) => {
-  const { title, description, is_mandatory, category_id } = req.body;
+  const { title, description, is_mandatory, category_id, reward_type, money_reward, force_create } = req.body;
   
   if (!title || !category_id) {
     return next(new AppError("Please provide title and category_id", 400));
@@ -29,11 +131,50 @@ exports.createTask = catchAsync(async (req, res, next) => {
     return next(new AppError("Category not found or doesn't belong to your family", 404));
   }
   
+  const normalizedRewardType = reward_type || 'points';
+  const normalizedMoneyReward = Number(money_reward || 0);
+
+  if (!['points', 'money', 'both'].includes(normalizedRewardType)) {
+    return next(new AppError("reward_type must be one of: points, money, both", 400));
+  }
+
+  if (!Number.isFinite(normalizedMoneyReward) || normalizedMoneyReward < 0) {
+    return next(new AppError("money_reward must be a non-negative number", 400));
+  }
+
+  if ((normalizedRewardType === 'money' || normalizedRewardType === 'both') && normalizedMoneyReward <= 0) {
+    return next(new AppError("money_reward must be greater than 0 when reward_type is money or both", 400));
+  }
+
+  if (normalizedRewardType === 'money' || normalizedRewardType === 'both') {
+    const budget = await Budget.findOne({
+      family_id: req.familyAccount._id,
+      category_name: TASKS_REWARDS_CATEGORY,
+      is_active: true,
+    });
+
+    if (budget) {
+      const remaining = Number((Number(budget.budget_amount || 0) - Number(budget.spent_amount || 0)).toFixed(2));
+      if (remaining < normalizedMoneyReward && !force_create) {
+        return res.status(409).json({
+          status: 'warning',
+          message: 'Budget for Tasks/Rewards is low. Create anyway?',
+          data: {
+            remaining_budget: remaining,
+            required_amount: normalizedMoneyReward,
+          },
+        });
+      }
+    }
+  }
+
   const newTask = await Task.create({
     title,
     description: description || '',
     is_mandatory: is_mandatory || false,
     created_by: req.member.mail,
+    reward_type: normalizedRewardType,
+    money_reward: normalizedMoneyReward,
     category_id,
     family_id: req.familyAccount._id
   });
@@ -319,18 +460,31 @@ exports.completeTask = catchAsync(async (req, res, next) => {
   }
   
   if (taskDetail.status === 'approved') {
-    return next(new AppError("This task is already approved", 400));
+    return next(new AppError("This task is already completed and rewarded", 400));
   }
-  
-  taskDetail.status = 'completed';
+
+  if (taskDetail.status !== 'assigned' && taskDetail.status !== 'in_progress' && taskDetail.status !== 'completed') {
+    return next(new AppError("This task cannot be completed from its current status", 400));
+  }
+
+  taskDetail.status = 'approved';
   taskDetail.completed_at = Date.now();
+  taskDetail.approved_at = Date.now();
+  taskDetail.approved_by = req.member.mail;
   if (notes) taskDetail.notes = notes;
   await taskDetail.save();
+
+  const rewardSummary = await applyTaskRewards({
+    task: taskDetail.task_id,
+    taskDetail,
+    familyId: req.familyAccount._id,
+    actorMail: req.member.mail,
+  });
   
   res.status(200).json({
     status: "success",
-    message: "Task marked as completed. Waiting for parent approval.",
-    data: { taskDetail }
+    message: "Task completed and rewards applied successfully.",
+    data: { taskDetail, rewardSummary }
   });
 });
 
@@ -364,9 +518,6 @@ exports.approveTaskCompletion = catchAsync(async (req, res, next) => {
     return next(new AppError("Please provide approval status (approved: true/false)", 400));
   }
   
-  const PointWallet = require("../models/point_walletModel");
-  const PointDetails = require("../models/point_historyModel");
-  
   const taskDetail = await TaskDetails.findById(taskDetailId)
     .populate('task_id');
   
@@ -385,42 +536,24 @@ exports.approveTaskCompletion = catchAsync(async (req, res, next) => {
   }
   
   if (approved) {
-    // Approve and award points
+    // Approve and apply rewards (points and/or money)
     taskDetail.status = 'approved';
     taskDetail.approved_by = req.member.mail;
     taskDetail.approved_at = Date.now();
     if (notes) taskDetail.notes += `\nApproval notes: ${notes}`;
     await taskDetail.save();
-    
-    // Update point wallet
-    let wallet = await PointWallet.findOne({ member_mail: taskDetail.member_mail, family_id: req.familyAccount._id });
-    if (!wallet) {
-      wallet = await PointWallet.create({ 
-        member_mail: taskDetail.member_mail, 
-        family_id: req.familyAccount._id,
-        total_points: 0 
-      });
-    }
-    
-    wallet.total_points += taskDetail.assigned_points;
-    await wallet.save();
-    
-    // Create point history entry
-    await PointDetails.create({
-      wallet_id: wallet._id,
-      member_mail: taskDetail.member_mail,
-      family_id: req.familyAccount._id,
-      points_amount: taskDetail.assigned_points,
-      reason_type: 'task_completion',
-      task_id: taskDetail.task_id,
-      granted_by: req.member.mail,
-      description: `Task completed: ${task.title}`
+
+    const rewardSummary = await applyTaskRewards({
+      task,
+      taskDetail,
+      familyId: req.familyAccount._id,
+      actorMail: req.member.mail,
     });
     
     res.status(200).json({
       status: "success",
-      message: `Task approved! ${taskDetail.assigned_points} points awarded.`,
-      data: { taskDetail, wallet }
+      message: `Task approved and rewards applied successfully.`,
+      data: { taskDetail, rewardSummary }
     });
   } else {
     // Reject
@@ -438,6 +571,74 @@ exports.approveTaskCompletion = catchAsync(async (req, res, next) => {
 });
 
 //========================================================================================
+// Rewards summary for tasks
+exports.getTaskRewardsSummary = catchAsync(async (req, res, next) => {
+  const period = (req.query.period || 'monthly').toLowerCase();
+  const now = new Date();
+  let periodStart;
+
+  if (period === 'yearly') {
+    periodStart = new Date(now.getFullYear(), 0, 1);
+  } else {
+    periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  const isParent = req.member.member_type_id?.type === 'Parent';
+
+  if (isParent) {
+    const moneyTransactions = await WalletTransaction.find({
+      family_id: req.familyAccount._id,
+      transaction_type: 'deposit',
+      description: { $regex: '^Task completed:' },
+      createdAt: { $gte: periodStart },
+    });
+
+    const totalMoneyPaid = moneyTransactions.reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+
+    return res.status(200).json({
+      status: 'success',
+      data: {
+        role: 'Parent',
+        period,
+        total_money_paid_for_tasks: Number(totalMoneyPaid.toFixed(2)),
+        transactions_count: moneyTransactions.length,
+      },
+    });
+  }
+
+  const [moneyTransactions, pointRewards] = await Promise.all([
+    WalletTransaction.find({
+      family_id: req.familyAccount._id,
+      member_mail: req.member.mail,
+      transaction_type: 'deposit',
+      description: { $regex: '^Task completed:' },
+      createdAt: { $gte: periodStart },
+    }),
+    PointHistory.find({
+      family_id: req.familyAccount._id,
+      member_mail: req.member.mail,
+      reason_type: 'task_completion',
+      createdAt: { $gte: periodStart },
+    }),
+  ]);
+
+  const totalMoneyEarned = moneyTransactions.reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+  const totalPointsEarned = pointRewards.reduce((sum, item) => sum + Number(item.points_amount || 0), 0);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      role: 'Child',
+      period,
+      total_money_earned_from_tasks: Number(totalMoneyEarned.toFixed(2)),
+      total_points_earned_from_tasks: Number(totalPointsEarned.toFixed(2)),
+      money_transactions_count: moneyTransactions.length,
+      point_rewards_count: pointRewards.length,
+    },
+  });
+});
+
+//========================================================================================
 // Set point deduction for undone tasks (manual penalty by Parent)
 exports.manualPenalty = catchAsync(async (req, res, next) => {
   const { taskDetailId } = req.params;
@@ -446,9 +647,6 @@ exports.manualPenalty = catchAsync(async (req, res, next) => {
   if (!penalty_points || penalty_points <= 0) {
     return next(new AppError("Please provide valid penalty_points", 400));
   }
-  
-  const PointWallet = require("../models/point_walletModel");
-  const PointDetails = require("../models/point_historyModel");
   
   const taskDetail = await TaskDetails.findById(taskDetailId)
     .populate('task_id');
@@ -463,20 +661,13 @@ exports.manualPenalty = catchAsync(async (req, res, next) => {
   }
   
   // Update wallet
-  let wallet = await PointWallet.findOne({ member_mail: taskDetail.member_mail, family_id: req.familyAccount._id });
-  if (!wallet) {
-    wallet = await PointWallet.create({ 
-      member_mail: taskDetail.member_mail, 
-      family_id: req.familyAccount._id,
-      total_points: 0 
-    });
-  }
+  let wallet = await ensurePointWallet(taskDetail.member_mail, req.familyAccount._id);
   
   wallet.total_points = Math.max(0, wallet.total_points - penalty_points);
   await wallet.save();
   
   // Create penalty history
-  await PointDetails.create({
+  await PointHistory.create({
     wallet_id: wallet._id,
     member_mail: taskDetail.member_mail,
     family_id: req.familyAccount._id,

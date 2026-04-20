@@ -18,6 +18,20 @@ const taskSchema = new mongoose.Schema({
     required: [true, 'Please provide who created the task'],
     ref: 'Member'
   },
+  reward_type: {
+    type: String,
+    enum: ['points', 'money', 'both'],
+    default: 'points'
+  },
+  money_reward: {
+    type: Number,
+    default: 0,
+    min: [0, 'Money reward cannot be negative']
+  },
+  paid_to_wallet: {
+    type: Boolean,
+    default: false
+  },
   category_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'TaskCategory',

@@ -16,9 +16,11 @@ class _RewardsScreenState extends State<RewardsScreen> {
   int _totalPoints = 0;
   bool _isLoading = true;
   List<Map<String, dynamic>> _rewardsHistory = [];
+  List<Map<String, dynamic>> _wishlistItems = [];
   List<dynamic> _familyRanking = [];
   int _earnedThisWeek = 0;
   int _redeemedTotal = 0;
+  double _pointsToMoneyRate = 0.05;
 
   @override
   void initState() {
@@ -46,6 +48,32 @@ class _RewardsScreenState extends State<RewardsScreen> {
       } catch (e) {
         print('Failed to load ranking: $e');
         _familyRanking = [];
+      }
+
+      // Load wishlist items for dynamic rewards cards
+      List<dynamic> wishlistRaw = [];
+      try {
+        wishlistRaw = await _apiService.getMyWishlistItems();
+      } catch (e) {
+        print('Failed to load wishlist items: $e');
+      }
+
+      // Load conversion rate for points -> money presentation
+      double pointsToMoneyRate = _pointsToMoneyRate;
+      try {
+        final memberId = await _apiService.getCurrentMemberId();
+        if (memberId != null && memberId.isNotEmpty) {
+          final combined = await _apiService.getCombinedBalance(memberId: memberId);
+          final conversion = combined['conversionRate'];
+          if (conversion is Map<String, dynamic>) {
+            final rate = conversion['points_to_money_rate'];
+            if (rate is num && rate > 0) {
+              pointsToMoneyRate = rate.toDouble();
+            }
+          }
+        }
+      } catch (e) {
+        print('Failed to load conversion rate: $e');
       }
 
       // Calculate stats
@@ -78,8 +106,13 @@ class _RewardsScreenState extends State<RewardsScreen> {
       setState(() {
         _totalPoints = wallet['total_points'] ?? 0;
         _rewardsHistory = historyList.take(10).toList();
+        _wishlistItems = wishlistRaw
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
         _earnedThisWeek = earned;
         _redeemedTotal = redeemed;
+        _pointsToMoneyRate = pointsToMoneyRate;
         _isLoading = false;
       });
     } catch (e) {
@@ -240,6 +273,37 @@ class _RewardsScreenState extends State<RewardsScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 24),
+
+                    Text(
+                      'Wishlist Rewards',
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green[800],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _wishlistItems.isEmpty
+                        ? Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Text(
+                              'No wishlist rewards yet. Add rewards from wishlist to redeem with points or money.',
+                              style: GoogleFonts.poppins(color: Colors.grey[700]),
+                            ),
+                          )
+                        : ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: _wishlistItems.length,
+                            separatorBuilder: (context, index) => const SizedBox(height: 10),
+                            itemBuilder: (context, index) => _buildWishlistRewardCard(_wishlistItems[index]),
+                          ),
                     const SizedBox(height: 24),
 
                     // Family Leaderboard Section
@@ -504,6 +568,87 @@ class _RewardsScreenState extends State<RewardsScreen> {
               fontSize: 18,
               fontWeight: FontWeight.bold,
               color: isEarned ? Colors.green : Colors.orange,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWishlistRewardCard(Map<String, dynamic> item) {
+    final title = (item['item_name'] ?? 'Reward').toString();
+    final details = (item['description'] ?? '').toString();
+    final points = ((item['required_points'] ?? 0) as num).toDouble();
+    final moneyOnly = double.parse((points * _pointsToMoneyRate).toStringAsFixed(2));
+    final splitPoints = (points / 2).round();
+    final splitMoney = double.parse((moneyOnly / 2).toStringAsFixed(2));
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
+            ),
+          ),
+          if (details.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              details,
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: Colors.grey[700],
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Text(
+            'Cost: ${points.toStringAsFixed(0)} Points',
+            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          Text(
+            'OR: ${moneyOnly.toStringAsFixed(2)} EGP',
+            style: GoogleFonts.poppins(fontSize: 13, color: Colors.green[700]),
+          ),
+          Text(
+            'OR: $splitPoints Points + ${splitMoney.toStringAsFixed(2)} EGP',
+            style: GoogleFonts.poppins(fontSize: 13, color: Colors.orange[700]),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pushNamed(
+                  context,
+                  '/redeem',
+                  arguments: {'prefillItem': item},
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green[700],
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.card_giftcard),
+              label: Text(
+                'Redeem This',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              ),
             ),
           ),
         ],

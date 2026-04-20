@@ -13,7 +13,8 @@ const {
   completeTask,
   getTasksWaitingApproval,
   approveTaskCompletion,
-  manualPenalty
+  manualPenalty,
+  getTaskRewardsSummary
 } = require('../controllers/TaskController');
 
 const taskRouter = express.Router();
@@ -24,6 +25,7 @@ taskRouter.use(protect);
 // Task templates
 taskRouter.get('/', getAllTasks);
 taskRouter.post('/', createTask);
+taskRouter.get('/rewards-summary', getTaskRewardsSummary);
 taskRouter.patch('/:taskId', restrictTo('Parent'), updateTask);
 taskRouter.delete('/:taskId', restrictTo('Parent'), deleteTask);
 
@@ -37,6 +39,7 @@ taskRouter.get('/my-tasks', getMyTasks);
 taskRouter.get('/all-assigned', getAllAssignedTasks);
 
 // Task completion
+taskRouter.patch('/:taskDetailId/complete', completeTask);
 taskRouter.patch('/assignments/:taskDetailId/complete', completeTask);
 taskRouter.get('/waiting-approval', restrictTo('Parent'), getTasksWaitingApproval);
 taskRouter.patch('/assignments/:taskDetailId/approve-completion', restrictTo('Parent'), approveTaskCompletion);

@@ -48,6 +48,21 @@ class _FutureEventsScreenState extends State<FutureEventsScreen> {
                           provider.futureEvents[i]['_id'],
                           {'saved_amount': saved},
                         ),
+                        onOpenFunding: () {
+                          final eventId = provider.futureEvents[i]['_id']?.toString();
+                          if (eventId == null || eventId.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Event ID is missing for this item')),
+                            );
+                            return;
+                          }
+
+                          Navigator.pushNamed(
+                            context,
+                            '/event-funding',
+                            arguments: {'eventId': eventId},
+                          );
+                        },
                       ),
                     ),
                   ),
