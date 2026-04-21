@@ -16,6 +16,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   final _amountCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   String? _selectedCategoryId;
+  String _expenseScope = 'shared';
   DateTime _expenseDate = DateTime.now();
   bool _isEmergency = false;
   bool _isLoading = false;
@@ -52,7 +53,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           const SnackBar(content: Text('Please enter a valid amount')));
       return;
     }
-    if (_selectedCategoryId == null) {
+    if (_expenseScope == 'shared' && _selectedCategoryId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please select a category')));
       return;
@@ -70,6 +71,11 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         'is_emergency': _isEmergency,
         'receipt_photo_url': _receiptPhotoUrl,
         'source_module': 'manual',
+        'expense_scope': _expenseScope,
+        'title': _descCtrl.text.trim().isEmpty
+            ? '${_expenseScope == 'personal' ? 'Personal' : 'Shared'} expense'
+            : _descCtrl.text.trim(),
+        'category': _selectedCategoryId == null ? 'General' : (_categories.firstWhere((cat) => cat['_id'] == _selectedCategoryId, orElse: () => {})['name'] ?? 'General'),
       });
       if (mounted) {
         Navigator.pop(context);
@@ -117,8 +123,43 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           ),
           const SizedBox(height: 16),
 
+          _sectionTitle('Expense Scope'),
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: RadioListTile<String>(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Shared'),
+                    subtitle: const Text('Deduct from family budget'),
+                    value: 'shared',
+                    groupValue: _expenseScope,
+                    onChanged: (value) => setState(() => _expenseScope = value ?? 'shared'),
+                  ),
+                ),
+                Expanded(
+                  child: RadioListTile<String>(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Personal'),
+                    subtitle: const Text('Track against member budget'),
+                    value: 'personal',
+                    groupValue: _expenseScope,
+                    onChanged: (value) => setState(() => _expenseScope = value ?? 'shared'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
           // Category
-          _sectionTitle('Category'),
+          _sectionTitle(_expenseScope == 'shared' ? 'Category' : 'Category (optional)'),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
@@ -129,7 +170,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 isExpanded: true,
-                hint: const Text('Select category'),
+                hint: Text(_expenseScope == 'shared' ? 'Select category' : 'Optional category'),
                 value: _selectedCategoryId,
                 items: _categories.map((cat) {
                   final color = _parseColor(cat['color'] ?? '#4CAF50');

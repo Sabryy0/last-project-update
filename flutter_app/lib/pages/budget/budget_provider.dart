@@ -186,8 +186,8 @@ class FamilyBudgetProvider extends ChangeNotifier {
   }
 
   Future<void> updateBudget(String budgetId, Map<String, dynamic> payload) async {
-    final res = await http.put(
-      Uri.parse('$_baseUrl/budgets/$budgetId'),
+    final res = await http.patch(
+      Uri.parse('$_baseUrl/budget/periods/$budgetId'),
       headers: await _headers(),
       body: jsonEncode(payload),
     );
@@ -201,7 +201,7 @@ class FamilyBudgetProvider extends ChangeNotifier {
 
   Future<void> deleteBudget(String budgetId) async {
     final res = await http.delete(
-      Uri.parse('$_baseUrl/budgets/$budgetId'),
+      Uri.parse('$_baseUrl/budget/periods/$budgetId'),
       headers: await _headers(),
     );
     if (res.statusCode == 204) {
@@ -217,7 +217,7 @@ class FamilyBudgetProvider extends ChangeNotifier {
     _setLoading(true);
     try {
       final res = await http.get(
-        Uri.parse('$_baseUrl/budgets/$budgetId'),
+        Uri.parse('$_baseUrl/budget/periods/$budgetId'),
         headers: await _headers(),
       );
       final data = jsonDecode(res.body);
@@ -235,8 +235,7 @@ class FamilyBudgetProvider extends ChangeNotifier {
   Future<void> loadExpenses({String? budgetId}) async {
     _setLoading(true);
     try {
-      String url = '$_baseUrl/budgets/expenses/all';
-      if (budgetId != null) url += '?budget_id=$budgetId';
+      String url = '$_baseUrl/budget/analytics';
       final res = await http.get(Uri.parse(url), headers: await _headers());
       final data = jsonDecode(res.body);
       if (res.statusCode == 200) {
@@ -314,7 +313,7 @@ class FamilyBudgetProvider extends ChangeNotifier {
   Future<void> loadAnalytics(String budgetId) async {
     try {
       final res = await http.get(
-        Uri.parse('$_baseUrl/budgets/$budgetId/analytics'),
+        Uri.parse('$_baseUrl/budget/analytics'),
         headers: await _headers(),
       );
       final data = jsonDecode(res.body);

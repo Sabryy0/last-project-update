@@ -45,8 +45,23 @@ const expenseSchema = new mongoose.Schema({
 	},
 	expense_source: {
 		type: String,
-		enum: ['budget', 'member_wallet', 'redeem_reward'],
+		enum: ['budget', 'member_wallet', 'redeem_reward', 'personal_budget'],
 		default: 'budget'
+	},
+	budget_id: {
+		type: mongoose.Schema.Types.ObjectId,
+		ref: 'Budget',
+		default: null
+	},
+	budget_category_id: {
+		type: mongoose.Schema.Types.ObjectId,
+		ref: 'InventoryCategory',
+		default: null
+	},
+	linked_member_allowance_id: {
+		type: mongoose.Schema.Types.ObjectId,
+		ref: 'MemberAllowance',
+		default: null
 	},
 	is_finalized: {
 		type: Boolean,
@@ -77,8 +92,10 @@ const expenseSchema = new mongoose.Schema({
 
 expenseSchema.index({ family_id: 1, expense_date: -1 });
 expenseSchema.index({ family_id: 1, expense_source: 1 });
+expenseSchema.index({ family_id: 1, budget_id: 1 });
 expenseSchema.index({ linked_redeem_id: 1 });
 expenseSchema.index({ linked_member_wallet_id: 1 });
+expenseSchema.index({ linked_member_allowance_id: 1 });
 expenseSchema.index({ linked_event_id: 1 });
 
 const Expense = mongoose.model('Expense', expenseSchema);

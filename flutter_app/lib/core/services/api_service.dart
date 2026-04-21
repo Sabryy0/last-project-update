@@ -977,6 +977,33 @@ class ApiService {
     throw Exception(errorData['message'] ?? 'Failed to load combined balance');
   }
 
+  Future<Map<String, dynamic>> getBalanceWalletDetails({String? memberId, String? scope}) async {
+    final headers = await _getHeaders();
+    final resolvedMemberId = memberId ?? await getCurrentMemberId();
+    if (resolvedMemberId == null || resolvedMemberId.isEmpty) {
+      throw Exception('Member ID not found');
+    }
+
+    final query = <String>[];
+    if (scope != null && scope.isNotEmpty) {
+      query.add('scope=${Uri.encodeComponent(scope)}');
+    }
+
+    final uri = query.isEmpty
+        ? Uri.parse('$baseUrl/budget/member/$resolvedMemberId/balance-details')
+        : Uri.parse('$baseUrl/budget/member/$resolvedMemberId/balance-details?${query.join('&')}');
+
+    final response = await http.get(uri, headers: headers);
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      return responseData['data'] ?? <String, dynamic>{};
+    }
+
+    final errorData = jsonDecode(response.body);
+    throw Exception(errorData['message'] ?? 'Failed to load balance details');
+  }
+
   Future<Map<String, dynamic>> convertMoneyToPoints(double amountMoney) async {
     final headers = await _getHeaders();
     final response = await http.post(

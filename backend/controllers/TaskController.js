@@ -10,6 +10,7 @@ const PointWallet = require("../models/point_walletModel");
 const PointHistory = require("../models/point_historyModel");
 const MemberWallet = require("../models/memberWalletModel");
 const WalletTransaction = require("../models/walletTransactionModel");
+const { recordBalanceWalletDetail } = require('../Utils/balanceWalletDetailHelper');
 
 const TASKS_REWARDS_CATEGORY = "Tasks/Rewards";
 
@@ -83,6 +84,26 @@ const applyTaskRewards = async ({ task, taskDetail, familyId, actorMail }) => {
       converted_amount: moneyReward,
       conversion_rate: 1,
       linked_point_transaction_id: pointHistory ? pointHistory._id : null,
+    });
+
+    await recordBalanceWalletDetail({
+      family_id: familyId,
+      member_id: taskDetail.member_id || null,
+      member_mail: taskDetail.member_mail,
+      member_wallet_id: moneyWallet._id,
+      wallet_scope: 'money_wallet',
+      change_type: 'credit',
+      source_type: 'task_reward',
+      amount: moneyReward,
+      previous_balance: Number((moneyWallet.balance - moneyReward).toFixed(2)),
+      new_balance: moneyWallet.balance,
+      title: 'Task reward added',
+      description: `Task completed: ${task.title}`,
+      added_by_mail: actorMail,
+      linked_wallet_transaction_id: walletTransaction._id,
+      linked_point_history_id: pointHistory ? pointHistory._id : null,
+      linked_task_history_id: taskDetail._id,
+      notes: 'task reward money deposit',
     });
 
     const budget = await Budget.findOne({ family_id: familyId, category_name: TASKS_REWARDS_CATEGORY, is_active: true });

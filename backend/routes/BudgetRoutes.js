@@ -6,7 +6,9 @@ const {
 	convertMoneyToPoints,
 	convertPointsToMoney,
 	getMemberCombinedBalance,
+	getMemberBalanceWalletDetails,
 	getRedeemExpenses,
+	createExpense,
 	createEventWithRewards,
 	contributeToEvent,
 	getEventFundingStatus,
@@ -32,7 +34,9 @@ budgetRouter.post('/wallet/convert-to-points', convertMoneyToPoints);
 budgetRouter.post('/wallet/convert-from-points', convertPointsToMoney);
 budgetRouter.get('/analytics', getCombinedAnalytics);
 budgetRouter.get('/member/:memberId/combined-balance', getMemberCombinedBalance);
+budgetRouter.get('/member/:memberId/balance-details', getMemberBalanceWalletDetails);
 budgetRouter.get('/expenses/redeems', getRedeemExpenses);
+budgetRouter.post('/expenses/new', createExpense);
 budgetRouter.post('/future-events', restrictTo('Parent'), createEventWithRewards);
 budgetRouter.post('/events/:eventId/contribute', contributeToEvent);
 budgetRouter.get('/events/:eventId/funding', getEventFundingStatus);

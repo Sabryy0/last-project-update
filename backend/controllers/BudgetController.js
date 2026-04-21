@@ -20,6 +20,8 @@ const MemberAllowance = require('../models/memberAllowanceModel');
 const PeriodBudget = require('../models/periodBudgetModel');
 const BudgetAllocation = require('../models/budgetAllocationModel');
 const InventoryCategory = require('../models/inventoryCategoryModel');
+const BalanceWalletDetail = require('../models/balanceWalletDetailModel');
+const { recordBalanceWalletDetail } = require('../Utils/balanceWalletDetailHelper');
 
 const DEFAULT_MONEY_TO_POINTS_RATE = 10;
 const DEFAULT_POINTS_TO_MONEY_RATE = 0.05;
@@ -124,6 +126,184 @@ const computeUsagePercentage = (spent, total) => {
 const computeRemaining = (total, spent) => {
 	return Number(Math.max(0, (Number(total || 0) - Number(spent || 0))).toFixed(2));
 };
+
+const getActivePersonalAllowance = async (familyId, memberMail, expenseDate = new Date()) => {
+	const normalizedDate = new Date(expenseDate);
+	const allowanceFilter = {
+		family_id: familyId,
+		member_mail: memberMail,
+	};
+
+	const periodAllowance = await MemberAllowance.findOne({
+		...allowanceFilter,
+		$or: [
+			{ start_date: null, end_date: null },
+			{ start_date: { $lte: normalizedDate }, end_date: { $gte: normalizedDate } },
+		],
+	}).sort({ createdAt: -1 });
+
+	if (periodAllowance) {
+		return periodAllowance;
+	}
+
+	const latestAllowance = await MemberAllowance.findOne(allowanceFilter).sort({ createdAt: -1 });
+	if (latestAllowance) {
+		return latestAllowance;
+	}
+
+	return MemberAllowance.create({
+		family_id: familyId,
+		member_mail: memberMail,
+		period_type: 'custom',
+		start_date: normalizedDate,
+		end_date: normalizedDate,
+		money_amount: 0,
+		spent_amount: 0,
+		last_activity_at: normalizedDate,
+	});
+};
+
+const logBalanceWalletDetail = async (payload) => {
+	try {
+		return await recordBalanceWalletDetail(payload);
+	} catch (_) {
+		return null;
+	}
+};
+
+exports.createExpense = catchAsync(async (req, res, next) => {
+	const {
+		title,
+		amount,
+		description,
+		notes,
+		expense_date,
+		category,
+		budget_id,
+		budget_category_id,
+		expense_scope,
+		source_module,
+	} = req.body;
+
+	if (!title || amount === undefined) {
+		return next(new AppError('Please provide title and amount', 400));
+	}
+
+	const normalizedAmount = Number(amount);
+	if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+		return next(new AppError('amount must be a positive number', 400));
+	}
+
+	const normalizedScope = (expense_scope || 'shared').toLowerCase();
+	if (!['shared', 'personal'].includes(normalizedScope)) {
+		return next(new AppError('expense_scope must be shared or personal', 400));
+	}
+
+	const expenseDate = expense_date ? new Date(expense_date) : new Date();
+	if (Number.isNaN(expenseDate.getTime())) {
+		return next(new AppError('expense_date must be a valid date', 400));
+	}
+
+	let linkedBudget = null;
+	let linkedAllowance = null;
+	let expenseSource = normalizedScope === 'personal' ? 'personal_budget' : 'budget';
+
+	if (normalizedScope === 'shared') {
+		if (!budget_id || !mongoose.Types.ObjectId.isValid(budget_id)) {
+			return next(new AppError('Please provide a valid budget_id for shared expenses', 400));
+		}
+
+		linkedBudget = await Budget.findOne({ _id: budget_id, family_id: req.familyAccount._id, is_active: true });
+		if (!linkedBudget) {
+			return next(new AppError('Shared budget not found', 404));
+		}
+
+		linkedBudget.spent_amount = Number((Number(linkedBudget.spent_amount || 0) + normalizedAmount).toFixed(2));
+		await linkedBudget.save();
+	} else {
+		linkedAllowance = await getActivePersonalAllowance(req.familyAccount._id, req.member.mail, expenseDate);
+		linkedAllowance.money_amount = Number(Number(linkedAllowance.money_amount || 0).toFixed(2));
+		linkedAllowance.spent_amount = Number((Number(linkedAllowance.spent_amount || 0) + normalizedAmount).toFixed(2));
+		linkedAllowance.last_activity_at = new Date();
+		await linkedAllowance.save();
+
+		await logBalanceWalletDetail({
+			family_id: req.familyAccount._id,
+			member_id: req.member._id,
+			member_mail: req.member.mail,
+			wallet_scope: 'personal_budget',
+			change_type: 'credit',
+			source_type: 'allowance',
+			amount: Number(linkedAllowance.money_amount || 0),
+			previous_balance: Number(linkedAllowance.spent_amount || 0),
+			new_balance: Number(linkedAllowance.money_amount || 0),
+			title: 'Personal budget allowance updated',
+			description: `Allowance updated for ${req.member.mail}`,
+			added_by_member_id: req.member._id,
+			added_by_mail: req.member.mail,
+			budget_id: budget_id || null,
+			notes: 'personal allowance allocation',
+		});
+	}
+
+	const expense = await Expense.create({
+		family_id: req.familyAccount._id,
+		member_id: req.member._id,
+		member_mail: req.member.mail,
+		category: category || linkedBudget?.category_name || 'General',
+		title,
+		amount: normalizedAmount,
+		description: description || '',
+		notes: notes || source_module || '',
+		expense_date: expenseDate,
+		expense_source: expenseSource,
+		budget_id: linkedBudget?._id || budget_id || null,
+		budget_category_id: budget_category_id && mongoose.Types.ObjectId.isValid(budget_category_id)
+			? budget_category_id
+			: null,
+		linked_member_allowance_id: linkedAllowance?._id || null,
+		is_finalized: normalizedScope === 'personal',
+		finalized_at: normalizedScope === 'personal' ? new Date() : null,
+	});
+
+	await logBalanceWalletDetail({
+		family_id: req.familyAccount._id,
+		member_id: req.member._id,
+		member_mail: req.member.mail,
+		wallet_scope: normalizedScope === 'personal' ? 'personal_budget' : 'shared_budget',
+		change_type: 'debit',
+		source_type: 'expense',
+		amount: normalizedAmount,
+		previous_balance: normalizedScope === 'personal'
+			? Number((Number(linkedAllowance?.money_amount || 0) + Number(normalizedAmount || 0)).toFixed(2))
+			: Number((Number(linkedBudget?.budget_amount || 0) + Number(normalizedAmount || 0) - Number(linkedBudget?.spent_amount || 0)).toFixed(2)),
+		new_balance: normalizedScope === 'personal'
+			? Number(Math.max(0, Number(linkedAllowance?.money_amount || 0) - Number(linkedAllowance?.spent_amount || 0)).toFixed(2))
+			: Number(Math.max(0, Number(linkedBudget?.budget_amount || 0) - Number(linkedBudget?.spent_amount || 0)).toFixed(2)),
+		title,
+		description: description || '',
+		added_by_member_id: req.member._id,
+		added_by_mail: req.member.mail,
+		linked_expense_id: expense._id,
+		budget_id: linkedBudget?._id || budget_id || null,
+		budget_category_id: budget_category_id && mongoose.Types.ObjectId.isValid(budget_category_id)
+			? budget_category_id
+			: null,
+		notes: source_module || 'manual expense',
+	});
+
+	res.status(201).json({
+		status: 'success',
+		message: normalizedScope === 'personal'
+			? 'Personal expense recorded successfully'
+			: 'Shared expense recorded successfully',
+		data: {
+			expense,
+			budget: linkedBudget,
+			personal_budget: linkedAllowance,
+		},
+	});
+});
 
 const recalcPeriodSpent = async (periodBudgetId) => {
 	const aggregate = await BudgetAllocation.aggregate([
@@ -431,6 +611,26 @@ exports.recordAllocationWithdrawal = catchAsync(async (req, res, next) => {
 		finalized_at: new Date(),
 	});
 
+	await logBalanceWalletDetail({
+		family_id: req.familyAccount._id,
+		member_id: expenseOwner._id,
+		member_mail: expenseOwner.mail,
+		wallet_scope: 'shared_budget',
+		change_type: 'debit',
+		source_type: 'budget_withdrawal',
+		amount: normalizedAmount,
+		previous_balance: Number((Number(periodBudget.total_amount || 0) - Number(periodSpent || 0) + normalizedAmount).toFixed(2)),
+		new_balance: Number(Math.max(0, Number(periodBudget.total_amount || 0) - Number(periodSpent || 0)).toFixed(2)),
+		title: expense.title,
+		description: expense.description,
+		added_by_member_id: req.member._id,
+		added_by_mail: req.member.mail,
+		linked_expense_id: expense._id,
+		budget_id: periodBudget._id,
+		budget_category_id: allocation.inventory_category_id?._id || allocation.inventory_category_id || null,
+		notes: `allocation_id=${allocation._id}`,
+	});
+
 	const remainingAfter = computeRemaining(allocation.allocated_amount, allocation.spent_amount);
 	const remainingPercentage = allocation.allocated_amount > 0
 		? Number(((remainingAfter / allocation.allocated_amount) * 100).toFixed(2))
@@ -600,6 +800,24 @@ exports.setPeriodMemberAllowances = catchAsync(async (req, res, next) => {
 			},
 			{ upsert: true, new: true, setDefaultsOnInsert: true }
 		);
+
+		await logBalanceWalletDetail({
+			family_id: req.familyAccount._id,
+			member_id: allowance.member_id,
+			member_mail: allowance.member_mail,
+			wallet_scope: 'personal_budget',
+			change_type: 'credit',
+			source_type: 'allowance',
+			amount: allowance.money_amount,
+			previous_balance: 0,
+			new_balance: allowance.money_amount,
+			title: 'Personal allowance assigned',
+			description: `Allowance set for ${allowance.member_mail}`,
+			added_by_member_id: req.member._id,
+			added_by_mail: req.member.mail,
+			budget_id: periodBudget._id,
+			notes: `period_type=${allowance.period_type}`,
+		});
 	}
 
 	const savedAllowances = await MemberAllowance.find({
@@ -730,6 +948,26 @@ exports.convertMoneyToPoints = catchAsync(async (req, res, next) => {
 			linked_point_transaction_id: pointHistory._id,
 		});
 
+		await logBalanceWalletDetail({
+			family_id: req.familyAccount._id,
+			member_id: req.member._id,
+			member_mail: req.member.mail,
+			member_wallet_id: memberWallet._id,
+			wallet_scope: 'money_wallet',
+			change_type: 'debit',
+			source_type: 'conversion',
+			amount: amountMoney,
+			previous_balance: previousMoneyBalance,
+			new_balance: memberWallet.balance,
+			title: 'Money converted to points',
+			description: `Converted ${amountMoney} money to ${pointsAmount} points`,
+			added_by_member_id: req.member._id,
+			added_by_mail: req.member.mail,
+			linked_wallet_transaction_id: createdTransaction._id,
+			linked_point_history_id: pointHistory._id,
+			notes: 'money_to_points conversion',
+		});
+
 		const notification = await sendParentNotification(
 			req.familyAccount._id,
 			'Money to points conversion completed',
@@ -816,6 +1054,26 @@ exports.convertPointsToMoney = catchAsync(async (req, res, next) => {
 			linked_point_transaction_id: pointHistory._id,
 		});
 
+		await logBalanceWalletDetail({
+			family_id: req.familyAccount._id,
+			member_id: req.member._id,
+			member_mail: req.member.mail,
+			member_wallet_id: memberWallet._id,
+			wallet_scope: 'money_wallet',
+			change_type: 'credit',
+			source_type: 'conversion',
+			amount: moneyAmount,
+			previous_balance: previousMoneyBalance,
+			new_balance: memberWallet.balance,
+			title: 'Points converted to money',
+			description: `Converted ${amountPoints} points to ${moneyAmount} money`,
+			added_by_member_id: req.member._id,
+			added_by_mail: req.member.mail,
+			linked_wallet_transaction_id: createdTransaction._id,
+			linked_point_history_id: pointHistory._id,
+			notes: 'points_to_money conversion',
+		});
+
 		const notification = await sendParentNotification(
 			req.familyAccount._id,
 			'Points to money conversion completed',
@@ -896,6 +1154,73 @@ exports.getMemberCombinedBalance = catchAsync(async (req, res, next) => {
 			total_value_in_money: totalValueInMoney,
 			total_value_in_points: totalValueInPoints,
 			conversionRate,
+		},
+	});
+});
+
+exports.getMemberBalanceWalletDetails = catchAsync(async (req, res, next) => {
+	const { memberId } = req.params;
+	const { scope } = req.query;
+
+	if (!mongoose.Types.ObjectId.isValid(memberId)) {
+		return next(new AppError('Invalid member ID', 400));
+	}
+
+	const targetMember = await Member.findOne({
+		_id: memberId,
+		family_id: req.familyAccount._id,
+	}).populate('member_type_id', 'type');
+
+	if (!targetMember) {
+		return next(new AppError('Member not found in this family', 404));
+	}
+
+	const requesterIsParent = req.member.member_type_id?.type === 'Parent';
+	const requesterIsTarget = req.member._id.toString() === targetMember._id.toString();
+
+	if (!requesterIsParent && !requesterIsTarget) {
+		return next(new AppError('You do not have permission to view this balance trail', 403));
+	}
+
+	const filter = {
+		family_id: req.familyAccount._id,
+		member_mail: targetMember.mail,
+	};
+
+	if (scope && ['money_wallet', 'points_wallet', 'shared_budget', 'personal_budget'].includes(scope)) {
+		filter.wallet_scope = scope;
+	}
+
+	const details = await BalanceWalletDetail.find(filter)
+		.sort({ createdAt: -1 })
+		.limit(100);
+
+	const summary = details.reduce((acc, detail) => {
+		const key = detail.wallet_scope || 'money_wallet';
+		if (!acc[key]) {
+			acc[key] = { credits: 0, debits: 0, net: 0 };
+		}
+		const amount = Number(detail.amount || 0);
+		if (detail.change_type === 'credit') {
+			acc[key].credits += amount;
+			acc[key].net += amount;
+		} else {
+			acc[key].debits += amount;
+			acc[key].net -= amount;
+		}
+		return acc;
+	}, {});
+
+	res.status(200).json({
+		status: 'success',
+		data: {
+			member: {
+				member_id: targetMember._id,
+				member_name: targetMember.username,
+				member_mail: targetMember.mail,
+			},
+			details,
+			summary,
 		},
 	});
 });
@@ -1406,10 +1731,10 @@ exports.getCombinedAnalytics = catchAsync(async (req, res, next) => {
 		memberWallets,
 	] = await Promise.all([
 		Member.find({ family_id: familyId }).populate('member_type_id', 'type').select('_id username mail member_type_id'),
-		Expense.find({ family_id: familyId }).select('category amount expense_source expense_date createdAt member_mail'),
+		Expense.find({ family_id: familyId }).select('category amount expense_source expense_date createdAt member_mail linked_member_allowance_id'),
 		PointHistory.find({ family_id: familyId }).select('member_mail points_amount reason_type createdAt'),
 		WalletTransaction.find({ family_id: familyId }).select('member_mail amount transaction_type description transaction_date createdAt'),
-		MemberAllowance.find({ family_id: familyId }).select('member_mail allowance_currency money_amount createdAt'),
+		MemberAllowance.find({ family_id: familyId }).select('member_mail allowance_currency money_amount spent_amount start_date end_date createdAt'),
 		Budget.find({ family_id: familyId, is_active: true }).select('category_name budget_amount spent_amount'),
 		MemberWallet.find({ family_id: familyId }).select('member_mail balance'),
 	]);
@@ -1431,6 +1756,10 @@ exports.getCombinedAnalytics = catchAsync(async (req, res, next) => {
 		(sum, entry) => sum + Number(entry.money_amount || 0),
 		0
 	);
+	const allowanceSpentFromModel = allowances.reduce(
+		(sum, entry) => sum + Number(entry.spent_amount || 0),
+		0
+	);
 
 	const rewardDeposits = walletTransactions.filter((tx) =>
 		tx.transaction_type === 'deposit' && /^Task completed:/i.test(tx.description || '')
@@ -1442,6 +1771,9 @@ exports.getCombinedAnalytics = catchAsync(async (req, res, next) => {
 	const moneyGivenTaskRewards = rewardDeposits.reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
 	const moneyGivenAllowances = allowanceMoneyFromModel + allowanceDeposits.reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
 	const totalMoneyGivenAsAllowanceRewards = Number((moneyGivenTaskRewards + moneyGivenAllowances).toFixed(2));
+
+	const personalExpenses = expenses.filter((expense) => expense.expense_source === 'personal_budget');
+	const personalSpendingTotal = personalExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
 	const spendingByCategoryMap = new Map();
 	for (const expense of expenses) {
@@ -1533,6 +1865,10 @@ exports.getCombinedAnalytics = catchAsync(async (req, res, next) => {
 			.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
 
 		const wallet = walletMap.get(child.mail);
+		const memberAllowances = allowances.filter((entry) => entry.member_mail === child.mail);
+		const personalBudgetAmount = memberAllowances.reduce((sum, entry) => sum + Number(entry.money_amount || 0), 0);
+		const personalBudgetSpent = memberAllowances.reduce((sum, entry) => sum + Number(entry.spent_amount || 0), 0);
+		const personalBudgetRemaining = Number(Math.max(0, personalBudgetAmount - personalBudgetSpent).toFixed(2));
 
 		return {
 			member_id: child._id,
@@ -1540,6 +1876,9 @@ exports.getCombinedAnalytics = catchAsync(async (req, res, next) => {
 			member_mail: child.mail,
 			money_received: Number((allowanceMoney + taskRewardMoney).toFixed(2)),
 			allowance_money_received: Number(allowanceMoney.toFixed(2)),
+			personal_budget_amount: Number(personalBudgetAmount.toFixed(2)),
+			personal_budget_spent: Number(personalBudgetSpent.toFixed(2)),
+			personal_budget_remaining: personalBudgetRemaining,
 			task_rewards_money_received: Number(taskRewardMoney.toFixed(2)),
 			points_earned: Number(pointsEarned.toFixed(2)),
 			points_redeemed: Number(pointsRedeemed.toFixed(2)),
@@ -1557,9 +1896,14 @@ exports.getCombinedAnalytics = catchAsync(async (req, res, next) => {
 			over_budget: Number(rewardsBudget?.spent_amount || 0) > Number(rewardsBudget?.budget_amount || 0),
 		},
 		allowances: {
-			budget_amount: Number(allowancesBudget?.budget_amount || 0),
-			spent_amount: Number(allowancesBudget?.spent_amount || 0),
-			over_budget: Number(allowancesBudget?.spent_amount || 0) > Number(allowancesBudget?.budget_amount || 0),
+			budget_amount: Number(allowancesBudget?.budget_amount || allowanceMoneyFromModel),
+			spent_amount: Number(allowancesBudget?.spent_amount || allowanceSpentFromModel),
+			over_budget: Number(allowancesBudget?.spent_amount || allowanceSpentFromModel) > Number(allowancesBudget?.budget_amount || allowanceMoneyFromModel),
+		},
+		personal_budget: {
+			budget_amount: Number(allowanceMoneyFromModel.toFixed(2)),
+			spent_amount: Number(allowanceSpentFromModel.toFixed(2)),
+			over_budget: allowanceSpentFromModel > allowanceMoneyFromModel,
 		},
 	};
 
@@ -1570,12 +1914,23 @@ exports.getCombinedAnalytics = catchAsync(async (req, res, next) => {
 	if (budgetHealth.allowances.over_budget) {
 		alerts.push('Allowances category is over budget');
 	}
+	if (budgetHealth.personal_budget.over_budget) {
+		alerts.push('Some personal budgets are over budget');
+	}
 
 	const monthlySummary = {
 		month: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
 		money_spent_this_month: Number(
 			expenses
 				.filter((entry) => new Date(entry.expense_date || entry.createdAt || now) >= monthStart)
+				.reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
+				.toFixed(2)
+		),
+		personal_money_spent_this_month: Number(
+			expenses
+				.filter((entry) =>
+					entry.expense_source === 'personal_budget' && new Date(entry.expense_date || entry.createdAt || now) >= monthStart
+				)
 				.reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
 				.toFixed(2)
 		),
@@ -1616,6 +1971,13 @@ exports.getCombinedAnalytics = catchAsync(async (req, res, next) => {
 			budget_health: budgetHealth,
 			alerts,
 			monthly_summary_for_parents: monthlySummary,
+			personal_budget_summary: {
+				total_budget_amount: Number(allowanceMoneyFromModel.toFixed(2)),
+				total_spent_amount: Number(allowanceSpentFromModel.toFixed(2)),
+				total_remaining_amount: Number(Math.max(0, allowanceMoneyFromModel - allowanceSpentFromModel).toFixed(2)),
+				personal_spending_this_month: Number(personalSpendingTotal.toFixed(2)),
+				tracked_expenses: personalExpenses.length,
+			},
 		},
 	});
 });

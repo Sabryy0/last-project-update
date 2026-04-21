@@ -11,6 +11,7 @@ const Budget = require("../models/budgetModel");
 const FutureEvent = require("../models/futureEventModel");
 const Member = require("../models/MemberModel");
 const MemberType = require("../models/MemberTypeModel");
+const { recordBalanceWalletDetail } = require('../Utils/balanceWalletDetailHelper');
 const mongoose = require("mongoose");
 const nodemailer = require("nodemailer");
 
@@ -178,6 +179,26 @@ exports.requestRedemption = catchAsync(async (req, res, next) => {
         conversion_type: 'none',
         converted_amount: requestedMoneyUsed,
         conversion_rate: 1,
+      });
+
+      await recordBalanceWalletDetail({
+        family_id: req.familyAccount._id,
+        member_id: req.member._id,
+        member_mail: req.member.mail,
+        member_wallet_id: moneyWallet._id,
+        wallet_scope: 'money_wallet',
+        change_type: 'debit',
+        source_type: 'redeem',
+        amount: requestedMoneyUsed,
+        previous_balance: Number((moneyWallet.balance + requestedMoneyUsed).toFixed(2)),
+        new_balance: moneyWallet.balance,
+        title: 'Redeem payment deducted',
+        description: `Redeemed: ${request_details}`,
+        added_by_member_id: req.member._id,
+        added_by_mail: req.member.mail,
+        linked_wallet_transaction_id: walletTransaction._id,
+        linked_redeem_id: redeemRequest._id,
+        notes: 'redeem money deduction',
       });
 
       expense = await Expense.create({

@@ -45,6 +45,17 @@ const periodBudgetSchema = new mongoose.Schema({
     min: [0, 'Threshold cannot be negative'],
     max: [100, 'Threshold cannot exceed 100']
   },
+  emergency_fund_percentage: {
+    type: Number,
+    default: 10,
+    min: [0, 'Emergency percentage cannot be negative'],
+    max: [100, 'Emergency percentage cannot exceed 100']
+  },
+  emergency_fund_spent: {
+    type: Number,
+    default: 0,
+    min: [0, 'Emergency fund spent cannot be negative']
+  },
   is_active: {
     type: Boolean,
     default: true
@@ -55,7 +66,18 @@ const periodBudgetSchema = new mongoose.Schema({
     default: null
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+periodBudgetSchema.virtual('emergency_fund_amount').get(function() {
+  return (this.total_amount * (this.emergency_fund_percentage || 0)) / 100;
+});
+
+periodBudgetSchema.virtual('emergency_fund_remaining').get(function() {
+  const total = (this.total_amount * (this.emergency_fund_percentage || 0)) / 100;
+  return total - (this.emergency_fund_spent || 0);
 });
 
 periodBudgetSchema.index({ family_id: 1, start_date: 1, end_date: 1 });

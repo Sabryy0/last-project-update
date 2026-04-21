@@ -25,6 +25,7 @@ import 'pages/groceries_screen.dart';
 import 'pages/grocery_list_detail_screen.dart';
 import 'pages/family_map_screen.dart';
 import 'pages/wallet/combined_wallet_screen.dart';
+import 'pages/wallet/balance_wallet_details_screen.dart';
 import 'pages/analytics/combined_analytics_screen.dart';
 import 'core/services/api_service.dart';
 import 'core/services/locale_service.dart';
@@ -101,6 +102,7 @@ class MyApp extends StatelessWidget {
               '/event-funding': (context) => const EventFundingScreen(),
               '/family-map': (context) => const FamilyMapScreen(),
               '/combined-wallet': (context) => const CombinedWalletScreen(),
+              '/wallet-details': (context) => const BalanceWalletDetailsScreen(),
               '/combined-analytics': (context) => const CombinedAnalyticsScreen(),
             },
           );

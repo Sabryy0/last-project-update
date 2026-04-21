@@ -37,6 +37,8 @@ class _HomePageState extends State<HomePage> {
   String _activeProfileKey = '';
   bool _hasActiveProfile = false;
   bool _loading = true;
+  bool _walletLoading = true;
+  Map<String, dynamic> _walletSummary = {};
 
   @override
   void initState() {
@@ -44,6 +46,7 @@ class _HomePageState extends State<HomePage> {
     _loadUserData();
     _loadSavedProfiles();
     _fetchFamilyMembers();
+    _loadWalletSummary();
   }
 
   Future<void> _loadUserData() async {
@@ -68,12 +71,30 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  Future<void> _loadWalletSummary() async {
+    try {
+      final summary = await _apiService.getCombinedBalance();
+      if (!mounted) return;
+      setState(() {
+        _walletSummary = summary;
+        _walletLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _walletSummary = {};
+        _walletLoading = false;
+      });
+    }
+  }
+
   Future<void> _switchProfileFromHome(String profileKey) async {
     try {
       await _apiService.switchProfile(profileKey);
       await _loadUserData();
       await _loadSavedProfiles();
       await _fetchFamilyMembers();
+      await _loadWalletSummary();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_t('Switched account', 'تم تبديل الحساب'))),
@@ -248,6 +269,7 @@ class _HomePageState extends State<HomePage> {
                             await _loadUserData();
                             await _loadSavedProfiles();
                             await _fetchFamilyMembers();
+                            await _loadWalletSummary();
                           }
                         },
                         icon: const Icon(Icons.manage_accounts),
@@ -690,6 +712,8 @@ class _HomePageState extends State<HomePage> {
                       if (_familyMembers.isNotEmpty) _buildFamilyMembers(),
                       const SizedBox(height: 30),
                       _buildQuickActions(),
+                      const SizedBox(height: 18),
+                      _buildWalletOverviewCard(),
                       const SizedBox(height: 30),
                       _buildUpcomingActivities(),
                       const SizedBox(height: 30),
@@ -822,6 +846,181 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildWalletOverviewCard() {
+    final moneyBalance = ((_walletSummary['money_balance'] ?? 0) as num).toDouble();
+    final pointsBalance = ((_walletSummary['points_balance'] ?? 0) as num).toDouble();
+    final totalValue = ((_walletSummary['total_value_in_money'] ?? moneyBalance) as num).toDouble();
+    final conversionRate = _walletSummary['conversionRate'];
+    final moneyToPointsRate = conversionRate is Map && conversionRate['money_to_points_rate'] != null
+        ? (conversionRate['money_to_points_rate'] as num).toDouble()
+        : 10.0;
+    final pointsToMoneyRate = conversionRate is Map && conversionRate['points_to_money_rate'] != null
+        ? (conversionRate['points_to_money_rate'] as num).toDouble()
+        : 0.05;
+
+    return InkWell(
+      onTap: () => Navigator.of(context).pushNamed('/wallet-details'),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFF4CAF50).withOpacity(0.18)),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 16, offset: const Offset(0, 6)),
+          ],
+        ),
+        child: _walletLoading
+            ? const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 18),
+                  child: CircularProgressIndicator(color: Color(0xFF1B5E20)),
+                ),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1B5E20).withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFF1B5E20), size: 19),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _t('Wallet Snapshot', 'ملخص المحفظة'),
+                        style: const TextStyle(color: Color(0xFF1A1A1A), fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pushNamed('/combined-wallet'),
+                        style: TextButton.styleFrom(foregroundColor: const Color(0xFF1B5E20)),
+                        child: Text(_t('Open Wallet', 'فتح المحفظة')),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _miniStatTile(
+                          label: _t('Money balance', 'رصيد المال'),
+                          value: '${moneyBalance.toStringAsFixed(2)} EGP',
+                          accent: const Color(0xFF1B5E20),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _miniStatTile(
+                          label: _t('Points balance', 'رصيد النقاط'),
+                          value: '${pointsBalance.toStringAsFixed(0)} pts',
+                          accent: const Color(0xFFF57C00),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _miniStatTile(
+                          label: _t('Total value', 'القيمة الكلية'),
+                          value: '${totalValue.toStringAsFixed(2)} EGP',
+                          accent: const Color(0xFF1565C0),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _miniStatTile(
+                          label: _t('Rates', 'أسعار التحويل'),
+                          value: '1 EGP = ${moneyToPointsRate.toStringAsFixed(0)} pts\n1 pt = ${pointsToMoneyRate.toStringAsFixed(2)} EGP',
+                          accent: const Color(0xFF4CAF50),
+                          multiline: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(context).pushNamed('/wallet-details'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF1B5E20),
+                            side: const BorderSide(color: Color(0xFF1B5E20)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          child: Text(_t('Balance details', 'تفاصيل الرصيد')),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(context).pushNamed('/combined-wallet'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1B5E20),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          child: Text(_t('Wallet view', 'عرض المحفظة')),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _miniStatTile({
+    required String label,
+    required String value,
+    required Color accent,
+    bool multiline = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accent.withOpacity(0.16)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(fontSize: 11, color: Colors.grey[700], fontWeight: FontWeight.w600),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: multiline ? 11 : 14,
+              height: multiline ? 1.25 : 1.1,
+              color: accent,
+              fontWeight: FontWeight.w800,
+            ),
+            maxLines: multiline ? 2 : 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
     );
   }
 

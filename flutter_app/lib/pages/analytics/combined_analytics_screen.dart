@@ -105,6 +105,7 @@ class _CombinedAnalyticsScreenState extends State<CombinedAnalyticsScreen> {
       final doc = pw.Document();
       final overview = _analytics['overview'] as Map<String, dynamic>? ?? {};
       final monthlySummary = _analytics['monthly_summary_for_parents'] as Map<String, dynamic>? ?? {};
+        final personalBudgetSummary = _analytics['personal_budget_summary'] as Map<String, dynamic>? ?? {};
       final memberSummaries = ((_analytics['member_summaries'] ?? []) as List)
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
@@ -147,8 +148,17 @@ class _CombinedAnalyticsScreenState extends State<CombinedAnalyticsScreen> {
             pw.SizedBox(height: 6),
             kvRow('Month', (monthlySummary['month'] ?? '-').toString()),
             kvRow('Money Spent This Month', '${_money(monthlySummary['money_spent_this_month'])} EGP'),
+            kvRow('Personal Money Spent This Month', '${_money(monthlySummary['personal_money_spent_this_month'])} EGP'),
             kvRow('Points Earned This Month', _num(monthlySummary['points_earned_this_month'])),
             kvRow('Points Redeemed This Month', _num(monthlySummary['points_redeemed_this_month'])),
+
+            pw.SizedBox(height: 12),
+            pw.Text('Personal Budget Tracker', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 6),
+            kvRow('Tracked budget amount', '${_money(personalBudgetSummary['total_budget_amount'])} EGP'),
+            kvRow('Tracked spent amount', '${_money(personalBudgetSummary['total_spent_amount'])} EGP'),
+            kvRow('Tracked remaining amount', '${_money(personalBudgetSummary['total_remaining_amount'])} EGP'),
+            kvRow('Expenses tracked this month', _num(personalBudgetSummary['tracked_expenses'])),
 
             pw.SizedBox(height: 12),
             pw.Text('Member Summary', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
@@ -567,6 +577,9 @@ class _CombinedAnalyticsScreenState extends State<CombinedAnalyticsScreen> {
                       ),
                       const SizedBox(height: 8),
                       _kv('Money received (allowance + task rewards)', '${moneyReceived.toStringAsFixed(2)} EGP'),
+                      _kv('Personal budget', '${((summary['personal_budget_amount'] ?? 0) as num).toDouble().toStringAsFixed(2)} EGP'),
+                      _kv('Personal budget spent', '${((summary['personal_budget_spent'] ?? 0) as num).toDouble().toStringAsFixed(2)} EGP'),
+                      _kv('Personal budget remaining', '${((summary['personal_budget_remaining'] ?? 0) as num).toDouble().toStringAsFixed(2)} EGP'),
                       _kv('Points earned', pointsEarned.toStringAsFixed(0)),
                       _kv('Points redeemed', pointsRedeemed.toStringAsFixed(0)),
                       _kv('Current money saved', '${saved.toStringAsFixed(2)} EGP'),
@@ -582,6 +595,7 @@ class _CombinedAnalyticsScreenState extends State<CombinedAnalyticsScreen> {
     final budgetHealth = _analytics['budget_health'] as Map<String, dynamic>? ?? {};
     final rewards = budgetHealth['rewards'] as Map<String, dynamic>? ?? {};
     final allowances = budgetHealth['allowances'] as Map<String, dynamic>? ?? {};
+    final personalBudget = budgetHealth['personal_budget'] as Map<String, dynamic>? ?? {};
     final alerts = ((_analytics['alerts'] ?? []) as List).map((e) => e.toString()).toList();
 
     Widget budgetCard(String title, Map<String, dynamic> data, Color color) {
@@ -635,6 +649,7 @@ class _CombinedAnalyticsScreenState extends State<CombinedAnalyticsScreen> {
         children: [
           budgetCard('Rewards category', rewards, const Color(0xFF6A1B9A)),
           budgetCard('Allowances category', allowances, const Color(0xFF00897B)),
+          budgetCard('Personal budget tracker', personalBudget, const Color(0xFF1565C0)),
           if (alerts.isNotEmpty) ...[
             const SizedBox(height: 6),
             ...alerts.map((alert) => Container(
@@ -662,6 +677,7 @@ class _CombinedAnalyticsScreenState extends State<CombinedAnalyticsScreen> {
 
   Widget _buildExportSection() {
     final summary = _analytics['monthly_summary_for_parents'] as Map<String, dynamic>? ?? {};
+    final personalBudgetSummary = _analytics['personal_budget_summary'] as Map<String, dynamic>? ?? {};
 
     return _panel(
       title: 'Export Combined Report',
@@ -675,7 +691,9 @@ class _CombinedAnalyticsScreenState extends State<CombinedAnalyticsScreen> {
           const SizedBox(height: 8),
           _kv('Month', (summary['month'] ?? '-').toString()),
           _kv('Money spent this month', '${_money(summary['money_spent_this_month'])} EGP'),
+          _kv('Personal money spent this month', '${_money(summary['personal_money_spent_this_month'])} EGP'),
           _kv('Points earned this month', _num(summary['points_earned_this_month'])),
+          _kv('Tracked personal budget', '${_money(personalBudgetSummary['total_budget_amount'])} EGP'),
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,

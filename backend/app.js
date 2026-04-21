@@ -64,6 +64,7 @@ app.use('/api/wishlist', wishlistRouter);
 app.use('/api/wishlist-categories', wishlistCategoryRouter);
 app.use('/api/redeem', redeemRouter);
 app.use('/api/budget', budgetRouter);
+app.use('/api/budgets', budgetRouter);
 
 // Food & Tracking module routes
 app.use('/api/units', unitRouter);
