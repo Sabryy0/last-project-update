@@ -1,0 +1,386 @@
+/* Leftovers Screen Styles - Matches Flutter LeftoversScreen exactly */
+
+.leftovers-screen {
+  min-height: 100vh;
+  background-color: #E8F5E9;
+  padding: 20px;
+  padding-bottom: 100px;
+  max-width: 700px;
+  margin: 0 auto;
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ════════════════════════════════════════════════════════════════════ */
+/* HEADER */
+/* ════════════════════════════════════════════════════════════════════ */
+
+.leftovers-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+  padding: 0;
+}
+
+.back-button {
+  background: white;
+  border: none;
+  padding: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+  height: 40px;
+  width: 40px;
+}
+
+.back-button:hover {
+  background-color: #F5F5F5;
+}
+
+.back-button-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+}
+
+.leftovers-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #2E3E33;
+  flex: 1;
+  letter-spacing: -0.3px;
+}
+
+.summary-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  height: 40px;
+  background-color: white;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #388E3C;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  flex-shrink: 0;
+}
+
+/* ════════════════════════════════════════════════════════════════════ */
+/* LOADING STATE */
+/* ════════════════════════════════════════════════════════════════════ */
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  gap: 20px;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(56, 142, 60, 0.1);
+  border-top-color: #388E3C;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-container p {
+  font-size: 16px;
+  color: #616161;
+  font-weight: 500;
+}
+
+/* ════════════════════════════════════════════════════════════════════ */
+/* ERROR BANNER */
+/* ════════════════════════════════════════════════════════════════════ */
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background-color: #FFEBEE;
+  border-left: 4px solid #F44336;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 20px;
+  color: #C62828;
+  font-size: 14px;
+}
+
+.error-banner p {
+  margin: 0;
+}
+
+/* ════════════════════════════════════════════════════════════════════ */
+/* TAB NAVIGATION */
+/* ════════════════════════════════════════════════════════════════════ */
+
+.tabs-container {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(56, 142, 60, 0.2);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tab {
+  background: none;
+  border: none;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #616161;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tab:hover {
+  color: #388E3C;
+}
+
+.tab.active {
+  color: #388E3C;
+  border-bottom-color: #388E3C;
+  font-weight: 600;
+}
+
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(56, 142, 60, 0.12);
+  color: #388E3C;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  padding: 0 4px;
+}
+
+/* ════════════════════════════════════════════════════════════════════ */
+/* LEFTOVERS LIST */
+/* ════════════════════════════════════════════════════════════════════ */
+
+.leftovers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ExpiringCard is handled by ExpiringCard.jsx component */
+
+/* ════════════════════════════════════════════════════════════════════ */
+/* EMPTY STATE */
+/* ════════════════════════════════════════════════════════════════════ */
+
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #616161;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+/* ════════════════════════════════════════════════════════════════════ */
+/* RESPONSIVE DESIGN */
+/* ════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .leftovers-screen {
+    padding: 16px;
+    padding-bottom: 100px;
+  }
+
+  .leftovers-title {
+    font-size: 22px;
+  }
+
+  .tabs-container {
+    gap: 4px;
+  }
+
+  .tab {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 768px) {
+  .leftovers-screen {
+    padding: 24px;
+  }
+
+  .leftovers-title {
+    font-size: 26px;
+  }
+}
+
+.btn-danger {
+  background-color: #dc3545;
+  color: white;
+  padding: 6px 12px;
+  font-size: 12px;
+  margin-top: 12px;
+}
+
+.btn-danger:hover {
+  background-color: #c82333;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+  margin-top: 0;
+}
+
+/* Leftovers List */
+.leftovers-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.leftover-card {
+  background: white;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: all 0.3s ease;
+}
+
+.leftover-card:hover {
+  border-color: #667eea;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+/* Status-based styling */
+.leftover-card.status-fresh {
+  border-top: 4px solid #28a745;
+}
+
+.leftover-card.status-expiring {
+  background: #fff8e1;
+  border-top: 4px solid #ffc107;
+}
+
+.leftover-card.status-expired {
+  background: #ffe5e5;
+  border-top: 4px solid #dc3545;
+}
+
+.leftover-info {
+  margin-bottom: 12px;
+}
+
+.leftover-info h3 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  color: #333;
+}
+
+.category {
+  margin: 4px 0;
+  font-size: 12px;
+  color: #667eea;
+  font-weight: 600;
+}
+
+.quantity {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.expiry-info {
+  margin-bottom: 12px;
+  padding: 12px;
+  background: #f9f9f9;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.expiry-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.expiry-badge.fresh {
+  background: #d4edda;
+  color: #155724;
+}
+
+.expiry-badge.expiring {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.expiry-badge.expired {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.expiry-date {
+  margin: 0;
+  font-size: 12px;
+  color: #999;
+}
+
+/* Error and Loading States */
+.error-message {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px 20px;
+  color: #999;
+  font-size: 14px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #999;
+  font-size: 14px;
+}

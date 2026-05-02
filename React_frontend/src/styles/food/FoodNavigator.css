@@ -1,0 +1,54 @@
+/* FoodNavigator - Container for all food module screens */
+
+.food-navigator {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: #E8F5E9;
+}
+
+.food-content {
+  flex: 1;
+  width: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ensure content doesn't go behind bottom nav */
+@media (max-height: 600px) {
+  .food-content {
+    padding-bottom: 80px;
+  }
+}
+
+/* Food Module Content */
+.food-module {
+  min-height: 100vh;
+  background: #f5f5f5;
+}
+
+.food-content {
+  min-height: calc(100vh - 60px);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .food-navbar {
+    flex-direction: column;
+    height: auto;
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .nav-links {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .nav-link {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+}
